@@ -13,7 +13,7 @@ PY = python3
 GDB = $(TOOLPREFIX)gdb
 CP = cp
 BUILDDIR = build
-C_SRCS := $(wildcard $K/*.c) $(wildcard $K/drivers/*.c) $(wildcard $K/ktest/*.c)
+C_SRCS := $(wildcard $K/*.c) $(wildcard $K/drivers/*.c) $(wildcard $K/ktest/*.c) $(wildcard $K/fs/*.c)
 AS_SRCS := $(wildcard $K/*.S)
 
 ifeq (,$(findstring $K/link_app.S,$(AS_SRCS)))
@@ -109,6 +109,7 @@ QEMUOPTS = \
 	-cpu rv64 \
 	-m 512M \
 	-kernel build/kernel	\
+	-drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 run: build/kernel
 	$(QEMU) $(QEMUOPTS)

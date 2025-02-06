@@ -15,6 +15,7 @@ UseTab: Never
 ColumnLimit: 180
 MaxEmptyLinesToKeep: 1
 
+BreakBeforeBinaryOperators: None
 DerivePointerAlignment: true
 PointerAlignment: Left
 AlignArrayOfStructures: Left

@@ -154,3 +154,16 @@ void mm_print(struct mm *mm) {
     }
     vm_print(mm->pgt);
 }
+
+void hexdump(uint8 *buf, uint64 len) {
+    for (uint64 i = 0; i < len; i++) {
+        if (i % 16 == 0) {
+            printf("%p: ", buf + i);
+        }
+        printf("%X", buf[i]);
+        if (i % 16 == 15) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}

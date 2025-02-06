@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "sbi.h"
 #include "timer.h"
+#include "fs/virtio.h"
 
 uint64 __pa kernel_image_end_4k;
 uint64 __pa kernel_image_end_2M;
@@ -209,13 +210,14 @@ static void bootcpu_init() {
     trap_init();
     console_init();
     printf("UART inited.\n");
+    virtio_disk_init();
     plicinit();
     kpgmgrinit();
     uvm_init();
     proc_init();
     allocator_init(&kstrbuf, "kstrbuf", KSTRING_MAX, 4096);
     loader_init();
-    load_init_app();
+    // load_init_app();
 
     timer_init();
     plicinithart();

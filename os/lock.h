@@ -26,10 +26,19 @@ struct sleeplock {
 typedef struct spinlock spinlock_t;
 typedef struct sleeplock sleeplock_t;
 
+// spinlock
 void spinlock_init(struct spinlock *lk, char *name);
 void acquire(struct spinlock *lk);
 void release(struct spinlock *lk);
 int holding(struct spinlock *lk);
+
+// sleeplock
+void sleeplock_init(struct sleeplock *lk, char *name);
+void acquiresleep(struct sleeplock *lk);
+void releasesleep(struct sleeplock *lk);
+int holdingsleep(struct sleeplock *lk);
+
+// cpu interrutps
 void push_off(void);
 void pop_off(void);
 

@@ -9,3 +9,5 @@ kernel_app.ld
 *.d
 *.asm
 *.sym
+*.img
+
