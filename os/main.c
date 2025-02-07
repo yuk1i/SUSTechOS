@@ -2,7 +2,6 @@
 #include "debug.h"
 #include "defs.h"
 #include "kalloc.h"
-#include "loader.h"
 #include "plic.h"
 #include "proc.h"
 #include "sbi.h"
@@ -10,19 +9,18 @@
 
 uint64 __pa kernel_image_end_4k;
 uint64 __pa kernel_image_end_2M;
+uint64 __pa kpage_allocator_base;
+uint64 __pa kpage_allocator_size;
 
-static char relocate_pagetable[PGSIZE] __attribute__((aligned(PGSIZE)));
-static char relocate_pagetable_level1_ident[PGSIZE] __attribute__((aligned(PGSIZE)));
-static char relocate_pagetable_level1_direct_mapping[PGSIZE] __attribute__((aligned(PGSIZE)));
-static char relocate_pagetable_level1_high[PGSIZE] __attribute__((aligned(PGSIZE)));
+static char percpu_kstack[NCPU][PGSIZE * 4] __attribute__((aligned(PGSIZE)));
 
-__noreturn static void bootcpu_start_relocation();
-__noreturn static void bootcpu_relocating();
+__noreturn void bootcpu_entry(int mhartid);
 __noreturn void secondarycpu_entry(int mhartid, int cpuid);
-__noreturn static void secondarycpu_relocating();
 
 static void bootcpu_init();
 static void secondarycpu_init();
+void init();
+static struct proc* initproc;
 
 static volatile int booted_count       = 0;
 static volatile int halt_specific_init = 0;
@@ -82,7 +80,9 @@ allocator_t kstrbuf;
  */
 
 void bootcpu_entry(int mhartid) {
-    printf("\n\n=====\nHello World!\n=====\n\nBoot stack: %p\nclean bss: %p - %p\n", boot_stack, s_bss, e_bss);
+    printf("\n\n=====\nHello World!\n=====\n\n");
+    printf("Boot stack: %p\nclean bss: %p - %p\n", boot_stack, s_bss, e_bss);
+
     memset(s_bss, 0, e_bss - s_bss);
 
     uint64 vendor = sbi_get_mvendorid();
@@ -101,67 +101,38 @@ void bootcpu_entry(int mhartid) {
     // after setup tp, we can use mycpu()
     mycpu()->cpuid    = 0;
     mycpu()->mhart_id = mhartid;
-
     // functions in log.h requres mycpu() to be initialized.
 
     infof("basic smp inited, thread_id available now, we are cpu %d: %p", mhartid, mycpu());
 
-    printf("Kernel Starts Relocating...\n");
-    bootcpu_start_relocation();
+    printf("Jump to percpu kernel stack\n");
 
-    // We will jump to kernel's real pagetable in relocation_start.
-    __builtin_unreachable();
-}
-
-__noreturn static void bootcpu_relocating() {
-    printf("Boot HART Relocated. We are at high address now! PC: %p\n", r_pc());
-
-    // Step 4. Rebuild final kernel pagetable
-    kvm_init();
-
-    uint64 new_sp = mycpu()->sched_kstack_top;
-    uint64 fn     = (uint64)&bootcpu_init;
-
+    uint64 fn = (uint64)&bootcpu_init;
+    uint64 sp = (uint64)&percpu_kstack[cpuid()];
     asm volatile(
         "mv a1, %0 \n \
         mv sp, %1 \n \
-        jr a1" ::"r"(fn),"r"(new_sp));
+        jr a1" ::"r"(fn),"r"(sp));
+
     __builtin_unreachable();
 }
 
-__noreturn void secondarycpu_entry(int hartid, int cpuid) {
-    printf("cpu %d (halt %d) booting. Relocating\n", cpuid, hartid);
+__noreturn void secondarycpu_entry(int hartid, int mycpuid) {
+    printf("cpu %d (halt %d) booting. Relocating\n", mycpuid, hartid);
 
     // init mycpu()
-    w_tp(cpuid);
-    getcpu(cpuid)->mhart_id = hartid;
-    getcpu(cpuid)->cpuid    = cpuid;
+    w_tp(mycpuid);
+    getcpu(mycpuid)->mhart_id = hartid;
+    getcpu(mycpuid)->cpuid    = mycpuid;
 
-    // switch to temporary pagetable.
-    w_satp(MAKE_SATP(relocate_pagetable));
-    sfence_vma();
-
-    // jump to kernel's high address
-    uint64 fn = (uint64)&secondarycpu_relocating + KERNEL_OFFSET;
-    uint64 sp = (uint64)&boot_stack_top + KERNEL_OFFSET;
-
-    asm volatile(
-        "mv a1, %0 \n \
-        mv sp, %1 \n \
-        jr a1" ::"r"(fn),"r"(sp));
-    __builtin_unreachable();
-}
-
-__noreturn static void secondarycpu_relocating() {
-    w_satp(MAKE_SATP(KVA_TO_PA(kernel_pagetable)));
-
-    uint64 sp = mycpu()->sched_kstack_top;
+    // jump to percpu kernel stack
     uint64 fn = (uint64)&secondarycpu_init;
-
+    uint64 sp = (uint64)&percpu_kstack[cpuid()];
     asm volatile(
         "mv a1, %0 \n \
         mv sp, %1 \n \
         jr a1" ::"r"(fn),"r"(sp));
+
     __builtin_unreachable();
 }
 
@@ -188,7 +159,7 @@ static void bootcpu_init() {
             int saved_booted_cnt = booted_count;
 
             printf("- booting hart %d: hsm_hart_start(hartid=%d, pc=_entry_sec, opaque=%d)", hartid, hartid, cpuid);
-            int ret = sbi_hsm_hart_start(hartid, KIVA_TO_PA(_entry_secondary_cpu), cpuid);
+            int ret = sbi_hsm_hart_start(hartid, (uint64)_entry_secondary_cpu, cpuid);
             printf(" = %d.\n", ret);
             if (ret < 0) {
                 printf("skipped for hart %d\n", hartid);
@@ -201,24 +172,23 @@ static void bootcpu_init() {
     }
 #endif
 
-    memset(relocate_pagetable, 0xde, PGSIZE);
-    memset(relocate_pagetable_level1_ident, 0xde, PGSIZE);
-    memset(relocate_pagetable_level1_direct_mapping, 0xde, PGSIZE);
-    memset(relocate_pagetable_level1_high, 0xde, PGSIZE);
-
     trap_init();
     console_init();
     printf("UART inited.\n");
     plicinit();
-    kpgmgrinit();
-    uvm_init();
-    proc_init();
-    allocator_init(&kstrbuf, "kstrbuf", KSTRING_MAX, 4096);
-    loader_init();
-    load_init_app();
 
+    // NOMMU: we need to set kpage_allocator_base and kpage_allocator_size
+    kpage_allocator_base = PGROUNDUP((uint64)ekernel);
+    kpage_allocator_size = PGROUNDUP(RISCV_DDR_BASE + PHYS_MEM_SIZE) - kpage_allocator_base;
+
+    kpgmgrinit();
+    proc_init();
     timer_init();
     plicinithart();
+
+    initproc = create_kthread((uint64)init, 0x1919810);
+    add_task(initproc);
+    release(&initproc->lock);
 
     MEMORY_FENCE();
     halt_specific_init = 1;
@@ -245,99 +215,35 @@ static void secondarycpu_init() {
     assert("scheduler returns");
 }
 
-__noreturn static void bootcpu_start_relocation() {
-    assert(IS_ALIGNED(KERNEL_PHYS_BASE, PGSIZE_2M));
-    // Although the kernel is compiled against VMA 0xffffffff80200000,
-    //  we are still running under the Physical Address 0x80200000.
+uint64 count = 0;
 
-    // Step. 1: Setup a temporary pagetable.
-    memset(relocate_pagetable, 0, PGSIZE);
-    memset(relocate_pagetable_level1_ident, 0, PGSIZE);
-    memset(relocate_pagetable_level1_direct_mapping, 0, PGSIZE);
-    memset(relocate_pagetable_level1_high, 0, PGSIZE);
-
-    pagetable_t pgt_root    = (pagetable_t)relocate_pagetable;
-    pagetable_t pgt_ident   = (pagetable_t)relocate_pagetable_level1_ident;
-    pagetable_t pgt_direct  = (pagetable_t)relocate_pagetable_level1_direct_mapping;
-    pagetable_t pgt_kernimg = (pagetable_t)relocate_pagetable_level1_high;
-
-    // Calculate Kernel image size, and round up to 2MiB.
-    uint64 kernel_size    = (uint64)ekernel - (uint64)skernel;
-    uint64 kernel_size_4K = ROUNDUP_2N(kernel_size, PGSIZE);
-    uint64 kernel_size_2M = ROUNDUP_2N(kernel_size, PGSIZE_2M);
-
-    kernel_image_end_4k = KERNEL_PHYS_BASE + kernel_size_4K;
-    kernel_image_end_2M = KERNEL_PHYS_BASE + kernel_size_2M;
-
-    printf("Kernel size: %p, Rounded to 2MiB: %p\n", kernel_size, kernel_size_2M);
-
-    // Calculate Kernel Mapping Base & End
-    uint64 kernel_phys_base = KERNEL_PHYS_BASE;
-    uint64 kernel_phys_end  = kernel_phys_base + kernel_size_2M;
-    uint64 kernel_virt_base = KERNEL_VIRT_BASE;
-    uint64 kernel_virt_end  = kernel_virt_base + kernel_size_2M;
-
-    // Calculate the first Direct Mapping Base & End
-    uint64 kernel_la_phy_base = kernel_image_end_2M;
-    uint64 kernel_la_base     = KERNEL_DIRECT_MAPPING_BASE + kernel_la_phy_base;
-    uint64 kernel_la_end      = kernel_la_base + PGSIZE_2M;
-
-    infof("Kernel phy_base: %p, phy_end_4k:%p, phy_end_2M %p", kernel_phys_base, kernel_image_end_4k, kernel_phys_end);
-
-    // We will still have some instructions executed on pc 0x8020xxxx before jumping to KIVA.
-    // Step 2. Setup Identity Mapping for 0x80200000 -> 0x80200000, using 2MiB huge page.
-    {
-        uint64 VPN2    = PX(2, kernel_phys_base);
-        pgt_root[VPN2] = MAKE_PTE((uint64)pgt_ident, 0);
-
-        for (uint64 pa = kernel_phys_base; pa < kernel_phys_end; pa += PGSIZE_2M) {
-            uint64 va       = pa;
-            uint64 vpn1     = PX(1, va);
-            pgt_ident[vpn1] = MAKE_PTE(pa, PTE_R | PTE_W | PTE_X | PTE_A | PTE_D);
-            printf("Mapping Identity: %p to %p\n", va, pa);
+void worker(int id) {
+    for (int i = 0; i < 1000000; i++) {
+        count++;
+        if (count % 100 == 0) {
+            debugf("thread %d: count %d, yielding", id, count);
+            yield();
         }
     }
-
-    // Step 3. Setup Kernel Image Mapping at high address
-    {
-        uint64 vpn2    = PX(2, kernel_virt_base);
-        pgt_root[vpn2] = MAKE_PTE((uint64)pgt_kernimg, 0);
-
-        for (uint64 pa = kernel_phys_base; pa < kernel_phys_end; pa += PGSIZE_2M) {
-            uint64 va         = pa + KERNEL_OFFSET;
-            uint64 vpn1       = PX(1, va);
-            pgt_kernimg[vpn1] = MAKE_PTE(pa, PTE_R | PTE_W | PTE_X | PTE_A | PTE_D);
-            printf("Mapping kernel image: %p to %p\n", va, pa);
-        }
+    exit(id + 114514);
+}
+#define NTHREAD 8
+void init() {
+    infof("kthread: init starts!");
+    int pids[NTHREAD];
+    for (int i = 0; i < NTHREAD; i++) {
+        struct proc* p = create_kthread((uint64)worker, i);
+        p->parent      = initproc;
+        pids[i]        = p->pid;
+        add_task(p);
+        release(&p->lock);
     }
-
-    // Step 4. Setup Kernel Direct Mapping (Partially)
-    {
-        // This Direct Mapping area is used in kvmmake.
-        // Only map one 2MiB [kernel_la_base - kernel_la_end]
-        uint64 vpn2      = PX(2, kernel_la_base);
-        pgt_root[vpn2]   = MAKE_PTE((uint64)pgt_direct, 0);
-        uint64 vpn1      = PX(1, kernel_la_base);
-        pgt_direct[vpn1] = MAKE_PTE(kernel_la_phy_base, PTE_R | PTE_W | PTE_A | PTE_D);
-        printf("Mapping Direct Mapping: %p to %p\n", kernel_la_base, kernel_la_phy_base);
+    int retcode;
+    for (int i = 0; i < NTHREAD; i++) {
+        int pid = wait(pids[i], &retcode);
+        infof("thread %d exited with code %d, expected %d", pid, retcode, i + 114514);
     }
-
-#ifdef LOG_LEVEL_DEBUG
-    vm_print_tmp(pgt_root);
-#endif
-
-    // Step 4. Enable SATP and jump to higher VirtAddr.
-    printf("Enable SATP on temporary pagetable.\n");
-    w_satp(MAKE_SATP(pgt_root));
-    sfence_vma();
-
-    uint64 fn = (uint64)&bootcpu_relocating + KERNEL_OFFSET;
-    uint64 sp = (uint64)&boot_stack_top + KERNEL_OFFSET;
-
-    asm volatile(
-        "mv a1, %0 \n \
-        mv sp, %1 \n \
-        jr a1" ::"r"(fn),"r"(sp));
-
-    __builtin_unreachable();
+    printf("kthread: all threads exited, count %d\n", count);
+    infof("kthread: init ends!");
+    exit(0);
 }

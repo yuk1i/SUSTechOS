@@ -81,6 +81,9 @@ static inline uint64 r_stvec() {
 // supervisor address translation and protection;
 // holds the address of the page table.
 static inline void w_satp(uint64 x) {
+    // NOMMU:
+    extern __attribute__((noreturn)) void __panic(char *fmt, ...);
+    __panic("nommu mode");
     asm volatile("csrw satp, %0" : : "r"(x));
 }
 
