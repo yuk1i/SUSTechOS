@@ -13,11 +13,11 @@ typedef struct allocator {
     char * name;
     spinlock_t lock;
 
+    struct linklist *freelist;
+    
     uint64 __kva pool_base;
     uint64 __kva pool_end;
 
-    uint8* bitmap;
-    
     uint64 object_size;
     uint64 object_size_aligned;
 

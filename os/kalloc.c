@@ -12,22 +12,24 @@ struct {
 
 int kalloc_inited = 0;
 
-void freerange(void *kpgva_start, void *kpgva_end) {
-    assert(PGALIGNED((uint64)kpgva_start));
-    assert(PGALIGNED((uint64)kpgva_end));
-
-    for (uint64 p = (uint64)kpgva_end - PGSIZE; p >= (uint64)kpgva_start; p -= PGSIZE) kfreepage((void *)KVA_TO_PA(p));
-    kalloc_inited = 1;
-}
-
 extern uint64 __kva kpage_allocator_base;
 extern uint64 __kva kpage_allocator_size;
 static spinlock_t kpagelock;
 
 void kpgmgrinit() {
     spinlock_init(&kpagelock, "pageallocator");
-    infof("init: base: %p, stop: %p", kpage_allocator_base, kpage_allocator_base + kpage_allocator_size);
-    freerange((void *)kpage_allocator_base, (void *)(kpage_allocator_base + kpage_allocator_size));
+
+    uint64 kpage_allocator_end = kpage_allocator_base + kpage_allocator_size;
+
+    infof("page allocator init: base: %p, stop: %p", kpage_allocator_base, kpage_allocator_end);
+
+    assert(PGALIGNED(kpage_allocator_base));
+    assert(PGALIGNED(kpage_allocator_end));
+
+    for (uint64 p = kpage_allocator_end - PGSIZE; p >= kpage_allocator_base; p -= PGSIZE) {
+        kfreepage((void *)KVA_TO_PA(p));
+    }
+    kalloc_inited = 1;
 }
 
 // Free the page of physical memory pointed at by v,
@@ -57,8 +59,7 @@ void kfreepage(void *__pa pa) {
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
 void *__pa kallocpage() {
-    uint64 ra;
-    asm volatile("mv %0, ra\n" : "=r"(ra));
+    uint64 ra = r_ra();  // who calls me?
 
     acquire(&kpagelock);
     struct linklist *l;
@@ -75,25 +76,20 @@ void *__pa kallocpage() {
 // Object Allocator
 static uint64 allocator_mapped_va = KERNEL_ALLOCATOR_BASE;
 
-static inline void bit_set(uint8 *bitmap, uint64 index) {
-    bitmap[index / 8] |= (1 << (index % 8));
-}
-
-static inline void bit_clear(uint8 *bitmap, uint64 index) {
-    bitmap[index / 8] &= ~(1 << (index % 8));
-}
-
-static inline int is_bit_set(const uint8 *bitmap, uint64 index) {
-    return bitmap[index / 8] & (1 << (index % 8));
-}
-
 void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uint64 count) {
+    // Under NOMMU mode, we require the sizeof([header, object]) is smaller than a page.
+    // assert(object_size < PGSIZE - sizeof(struct linklist));
+
+    // The allocator leaves spaces for a `struct linklist` before every object:
+    //  [PGALIGNED][linklist, object][linklist, object]...[linklist, object]..[PGALIGNED]
+    //             ^__pool_base, first object             ^_ the last obj               ^__pool_end
+
     memset(alloc, 0, sizeof(*alloc));
     // record basic properties of the allocator
     alloc->name = name;
     spinlock_init(&alloc->lock, "allocator");
     alloc->object_size         = object_size;
-    alloc->object_size_aligned = ROUNDUP_2N(object_size, 16);
+    alloc->object_size_aligned = ROUNDUP_2N(object_size + sizeof(struct linklist), 8);
     alloc->max_count           = count;
 
     assert(count <= PGSIZE * 8);
@@ -121,18 +117,15 @@ void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uin
     }
     sfence_vma();
 
-    // allocate the bitmap page:
-    void *__pa pg = kallocpage();
-    assert(pg);
-    alloc->bitmap = (uint8 *)PA_TO_KVA(pg);
-
-    // mark all bits are allocated
-    memset(alloc->bitmap, 0xff, PGSIZE);
-
-    // mark [count] objects are freed
-    for (uint64 i = 0; i < alloc->max_count; i++) {
-        bit_clear(alloc->bitmap, i);
+    // init the freelist:
+    for (uint64 i = 0, addr = alloc->pool_base; i < alloc->max_count; i++) {
+        assert(addr + alloc->object_size_aligned <= alloc->pool_end);
+        struct linklist *l = (struct linklist *)addr;
+        l->next            = alloc->freelist;
+        alloc->freelist    = l;
+        addr += alloc->object_size_aligned;
     }
+
     alloc->available_count = alloc->max_count;
     alloc->allocated_count = 0;
 }
@@ -143,38 +136,47 @@ void *kalloc(struct allocator *alloc) {
     if (alloc->available_count == 0)
         panic("unavailable");
     alloc->available_count--;
-    for (uint64 i = 0; i < alloc->max_count; i++) {
-        if (!is_bit_set(alloc->bitmap, i)) {
-            bit_set(alloc->bitmap, i);
-            alloc->allocated_count++;
-            uint8 *ret = (uint8 *)(alloc->pool_base + (i * alloc->object_size_aligned));
-            assert(alloc->allocated_count + alloc->available_count == alloc->max_count);
 
-            memset(ret, 0xf9, alloc->object_size_aligned);
-            tracef("kalloc(%s) returns %p", alloc->name, ret);
-            release(&alloc->lock);
-            return ret;
-        }
+    void *ret;
+
+    struct linklist *l = alloc->freelist;
+    if (l) {
+        alloc->freelist = l->next;
+        ret             = (void *)((uint64)l + sizeof(*l));
+
+        alloc->allocated_count++;
+
+        memset(l, 0xff, sizeof(*l));
+        memset(ret, 0xfe, alloc->object_size);
+    } else {
+        panic("kalloc: no free object, increase the count when init");
     }
-    panic("should not happen");
+    release(&alloc->lock);
+
+    tracef("kalloc(%s) returns %p", alloc->name, ret);
+
+    return ret;
 }
 
 void kfree(struct allocator *alloc, void *obj) {
     if (obj == NULL)
         return;
-    acquire(&alloc->lock);
+
     assert(alloc);
     assert(alloc->pool_base <= (uint64)obj && (uint64)obj < alloc->pool_end);
 
-    uint64 index = ((uint64)obj - alloc->pool_base) / alloc->object_size_aligned;
-    if (!is_bit_set(alloc->bitmap, index)) {
-        panic("double free: %p", obj);
-    }
+    memset(obj, 0xfa, alloc->object_size);
 
-    bit_clear(alloc->bitmap, index);
+    acquire(&alloc->lock);
+
+    // put the object back to the freelist.
+    struct linklist *l = (struct linklist *)((uint64)obj - sizeof(*l));
+    l->next            = alloc->freelist;
+    alloc->freelist    = l;
+
     alloc->allocated_count--;
     alloc->available_count++;
     assert(alloc->allocated_count + alloc->available_count == alloc->max_count);
-    memset(obj, 0xfa, alloc->object_size_aligned);
+
     release(&alloc->lock);
 }
