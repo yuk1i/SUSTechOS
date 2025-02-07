@@ -40,8 +40,7 @@ static void printptr(uint64 x) {
 }
 
 // Print to the console. only understands %d, %x, %p, %s.
-void printf(char *fmt, ...) {
-    va_list ap;
+static void vprintf(char *fmt, va_list ap) {
     int i, c;
     char *s;
 
@@ -53,7 +52,6 @@ void printf(char *fmt, ...) {
     while (__sync_lock_test_and_set(&print_lock, 1) != 0);
     __sync_synchronize();
 
-    va_start(ap, fmt);
     for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
         if (c != '%') {
             consputc(c);
@@ -97,12 +95,20 @@ void printf(char *fmt, ...) {
         intr_on();
 }
 
+void printf(char *fmt, ...) {
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+}
+
 __noreturn void __panic(char *fmt, ...) {
     va_list ap;
 
     panicked = 1;
     va_start(ap, fmt);
-    printf(fmt, ap);
+    vprintf(fmt, ap);
     va_end(ap);
 
     while (1) asm volatile("nop":::"memory");
