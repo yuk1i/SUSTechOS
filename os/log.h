@@ -159,9 +159,7 @@ enum LOG_COLOR {
         }                                                                         \
     } while (0)
 
-#define static_assert(x) \
-    switch (x)           \
-    case 0:              \
-    case (x):;
+#define static_assert(expr, ...) __static_assert(expr, ##__VA_ARGS__, #expr)
+#define __static_assert(expr, msg, ...) _Static_assert(expr, msg)
 
 #endif  //! LOG_H
