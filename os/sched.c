@@ -22,6 +22,9 @@ static struct proc *fetch_task() {
 }
 
 void add_task(struct proc *p) {
+    assert(p->state == RUNNABLE);
+    assert(holding(&p->lock));
+
     push_queue(&task_queue, p);
     debugf("add task (pid=%d) to task queue", p->pid);
 }
