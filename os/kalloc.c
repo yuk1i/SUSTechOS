@@ -28,8 +28,8 @@ void kpgmgrinit() {
     assert(PGALIGNED(kpage_allocator_end));
 
     for (uint64 p = kpage_allocator_end - PGSIZE; p >= kpage_allocator_base; p -= PGSIZE) {
-        kfreepage((void *)KVA_TO_PA(p));
         freepages_count++;
+        kfreepage((void *)(p));
     }
     kalloc_inited = 1;
 }
@@ -41,7 +41,7 @@ void kpgmgrinit() {
 void kfreepage(void *__pa pa) {
     struct linklist *l;
 
-    uint64 __kva kvaddr = PA_TO_KVA(pa);
+    uint64 __pa kvaddr = (uint64)pa;
     if (!PGALIGNED((uint64)pa) || !(kpage_allocator_base <= kvaddr && kvaddr < kpage_allocator_base + kpage_allocator_size))
         panic("invalid page %p", pa);
     memset((void *)kvaddr, 0xdd, PGSIZE);
@@ -71,24 +71,18 @@ void *__pa kallocpage() {
         freepages_count--;
     }
     release(&kpagelock);
-    
-    debugf("alloc: %p, by %p", l, ra);
-
-    if (l != NULL) {
-        memset((char *)l, 0xaf, PGSIZE);  // fill with junk
-    } else {
-        warnf("out of memory, called by %p", ra);
-        return 0;
-    }
-    return (void *)KVA_TO_PA((uint64)l);
+    if (l)
+        memset((char *)l, 0xaf, PGSIZE);
+    return (void *)((uint64)l);
 }
 
 // Object Allocator
-static uint64 allocator_mapped_va = KERNEL_ALLOCATOR_BASE;
+// static uint64 allocator_mapped_va = KERNEL_ALLOCATOR_BASE;
 
 void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uint64 count) {
-    // Under NOMMU mode, we require the sizeof([header, object]) is smaller than a page.
-    // assert(object_size < PGSIZE - sizeof(struct linklist));
+    // Under NOMMU mode, we require the sizeof([header, object]) must be smaller than a page.
+    //  because we cannot guarantee the [haeder,object] is in the same page.
+    assert(object_size < PGSIZE - sizeof(struct linklist));
 
     // The allocator leaves spaces for a `struct linklist` before every object:
     //  [PGALIGNED][linklist, object][linklist, object]...[linklist, object]..[PGALIGNED]
@@ -102,39 +96,44 @@ void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uin
     alloc->object_size_aligned = ROUNDUP_2N(object_size + sizeof(struct linklist), 8);
     alloc->max_count           = count;
 
-    assert(count <= PGSIZE * 8);
+    uint64 addr = (uint64)kallocpage();
+    assert(addr);
+    memset((void *)addr, 0, PGSIZE);
 
-    // calculate how many pages do we need
-    uint64 total_size = alloc->object_size_aligned * alloc->max_count;
-    total_size        = PGROUNDUP(total_size);
+    uint64 seg_start = addr, idx_start = 0;
+    infof("allocator %s inited [NOMMU]. start: %p", name, seg_start);
 
-    // calculate the pool base and end.
-    alloc->pool_base = allocator_mapped_va;
-    alloc->pool_end  = alloc->pool_base + total_size;
+    for (uint64 i = 0; i < count; i++) {
+        if (((addr + alloc->object_size_aligned) >> PGSHIFT) != ((addr) >> PGSHIFT)) {
+            // if next object will cross the page boundary, allocate a new page.
+            uint64 next_page = (uint64)kallocpage();
+            assert(next_page);
+            memset((void *)next_page, 0, PGSIZE);
 
-    infof("allocator %s inited base %p", name, alloc->pool_base);
+            // if we get the adjacent page, use the space between them.
+            //  we can allocate next object just at `addr`.
 
-    // add a significant gap between different types of objects.
-    allocator_mapped_va += ROUNDUP_2N(total_size, KERNEL_ALLOCATOR_GAP);
+            if ((next_page >> PGSHIFT) != (addr >> PGSHIFT) + 1) {
+                // otherwise, we meet the non-continuous page, report it and set addr = next_page.
+                infof(" - segment: [%d -> %d]: [%p -> %p)", idx_start, i, seg_start, addr);
 
-    // allocate physical pages and kvmmap [pool_base, pool_end)
-    for (uint64 va = alloc->pool_base; va < alloc->pool_end; va += PGSIZE) {
-        void *__pa pg = kallocpage();
-        if (pg == NULL)
-            panic("kallocpage");
-        memset((void *)PA_TO_KVA(pg), 0xf8, PGSIZE);
-        kvmmap(kernel_pagetable, va, (uint64)pg, PGSIZE, PTE_A | PTE_D | PTE_R | PTE_W);
-    }
-    sfence_vma();
+                addr = next_page;
 
-    // init the freelist:
-    for (uint64 i = 0, addr = alloc->pool_base; i < alloc->max_count; i++) {
-        assert(addr + alloc->object_size_aligned <= alloc->pool_end);
+                seg_start = addr;
+                idx_start = i;
+            }
+
+            // Note: if we have mmu to do address translate, we just simply let the VA to be continuous.
+            //        we don't care whether the mapped PA is continuous or not.
+        }
+
         struct linklist *l = (struct linklist *)addr;
         l->next            = alloc->freelist;
         alloc->freelist    = l;
+
         addr += alloc->object_size_aligned;
     }
+    infof(" - segment: [%d -> %d]: [%p -> %p)", idx_start, count, seg_start, addr);
 
     alloc->available_count = alloc->max_count;
     alloc->allocated_count = 0;
@@ -175,7 +174,7 @@ void kfree(struct allocator *alloc, void *obj) {
         return;
 
     assert(alloc);
-    assert(alloc->pool_base <= (uint64)obj && (uint64)obj < alloc->pool_end);
+    // assert(alloc->pool_base <= (uint64)obj && (uint64)obj < alloc->pool_end);
 
     memset(obj, 0xfa, alloc->object_size);
 

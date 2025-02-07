@@ -1,6 +1,5 @@
 #include "defs.h"
 #include "kalloc.h"
-#include "loader.h"
 #include "proc.h"
 #include "queue.h"
 #include "trap.h"
