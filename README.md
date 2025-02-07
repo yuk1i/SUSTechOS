@@ -1,14 +1,34 @@
-# uCore-Tutorial-Code
+# uCore-VisionFive2
 
-Course project for THU-OS.
+A modified xv6 for SUSTech OS.
 
-对标 [rCore-Tutorial-v3](https://github.com/rcore-os/rCore-Tutorial-v3/) 的 C 版本代码。
+对标 [xv6-riscv](https://github.com/mit-pdos/xv6-riscv)。
 
-主要参考 [xv6-riscv](https://github.com/mit-pdos/xv6-riscv), [uCore-SMP](https://github.com/TianhuaTao/uCore-SMP)。
+## 对比 xv6 改了什么
 
-实验 lab1-lab5 基准代码分别位于 ch3-ch8　分支下。
+- S-mode 启动，OpenSBI 作为 M mode。
+- 有 SMP，使用 OpenSBI HSM Extension 启动多核心。
+  - `make run` 启动单核，`make runsmp` 启动多核心。
+  - sbi_hsm_hart_start 在单核情况下返回错误。
+- 内核页表使用类似 Linux 的 Memory Layout，内核代码处于高地址，显著区分用户地址和内核地址。
+  - 将内核地址划分为多个区域：
+	- Kernel Image
+	- Kernel Direct Mapping pages, 由 kallocpage/kfreepage 管理的页面分配。
+	- Kernel Fixed-Size Object Heap, 由 kalloc/kfree 管理的固定大小对象分配池。
+- 使用单独的 mm 和 vma 结构体管理用户空间内存。
+- 使用类似 slab-allocator (kmem_cache) 动态分配固定大小的对象。
+- 兼容 VisionFive 2 (JH7110) 开发板
 
-注：为了兼容清华 Git 的需求、避免同学在主分支写代码、明确主分支的功能性，特意单独建了仅包含 README 与 LICENSE 的 master 分支，完成课程实验时请在 clone 仓库后先 push master 分支到清华 Git，然后切到自己开发所需的分支进行后续操作。
+## branches:
+
+- yuki: 主分支
+- nommu: 无页表，有 SMP，有 Kernel Thread + Scheduling
+- fs: 带文件系统
+- smp (deprecated): 第一次实现 smp 的原始分支
+
+## User Prog
+
+TODO:...
 
 ## 本地开发测试
 
@@ -36,10 +56,10 @@ See VisionFive2 Notes in codes.
 
 ### Checklist
 
-- pagetable
-- interrupt
-- userspace
-- SMP
+- [done] pagetable 
+- [done] interrupt
+- [done] userspace
+- [done] SMP
 
 ### gdb & openocd
 
