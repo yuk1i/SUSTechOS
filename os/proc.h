@@ -57,9 +57,10 @@ struct proc {
     struct proc *parent;  // Parent process
 
     int index;
-    struct mm *mm;
-    struct vma *vma_brk;                // special vma for heap, included in mm->vma list.
-    struct trapframe *__kva trapframe;  // data page for trampoline.S
+    //  under NOMMU mode, we do not have mmu.
+    // struct mm *mm;
+    // struct vma *vma_brk;                // special vma for heap, included in mm->vma list.
+    // struct trapframe *__kva trapframe;  // data page for trampoline.S
     uint64 __kva kstack;                // Virtual address of kernel stack
     struct context context;             // swtch() here to run process
 };
@@ -83,8 +84,7 @@ static inline struct proc *curr_proc() {
 // proc.c
 void proc_init();
 struct proc *allocproc();
-int fork();
-int exec(char *name, char* arg[]);
+struct proc *create_kthread(uint64 fn, uint64 arg);
 int wait(int, int *);
 void exit(int);
 

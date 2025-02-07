@@ -14,9 +14,6 @@ typedef struct allocator {
     spinlock_t lock;
 
     struct linklist *freelist;
-    
-    uint64 __kva pool_base;
-    uint64 __kva pool_end;
 
     uint64 object_size;
     uint64 object_size_aligned;
