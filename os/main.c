@@ -217,7 +217,7 @@ static void bootcpu_init() {
     proc_init();
     allocator_init(&kstrbuf, "kstrbuf", KSTRING_MAX, 4096);
     loader_init();
-    // load_init_app();
+    load_init_app();
 
     timer_init();
     plicinithart();

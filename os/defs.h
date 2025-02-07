@@ -22,6 +22,7 @@
 #define ENABLE_SMP    (1)
 #define NCPU          (4)
 #define NPROC         (512)
+#define BSIZE         (512)
 #define KSTRING_MAX   (256)
 #define MAXARG        (32)
 #define PHYS_MEM_SIZE (128ull * 1024 * 1024)

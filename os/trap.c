@@ -7,6 +7,7 @@
 #include "plic.h"
 #include "syscall.h"
 #include "timer.h"
+#include "fs/virtio.h"
 
 static int64 kp_print_lock = 0;
 extern volatile int panicked;

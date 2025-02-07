@@ -30,5 +30,9 @@ void fs_init() {
 
     hexdump(b->data, BSIZE);
 
+    memmove(b->data, "hello, world!", 13);
+    virtio_disk_rw(b, 1);
+    infof("first write done!");
+
     while (1) asm volatile("wfi");
 }

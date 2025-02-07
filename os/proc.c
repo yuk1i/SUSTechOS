@@ -121,7 +121,7 @@ found:
     memset(&p->context, 0, sizeof(p->context));
     memset((void *)p->kstack, 0, KERNEL_STACK_SIZE);
     memset((void *)p->trapframe, 0, PGSIZE);
-    p->context.ra = (uint64)first_sched_userret;
+    p->context.ra = (uint64)first_sched_ret;
     p->context.sp = p->kstack + KERNEL_STACK_SIZE;
 
     assert(holding(&p->lock));
