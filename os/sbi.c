@@ -14,7 +14,7 @@ const uint64 SBI_SHUTDOWN = 8;
 
 const uint64 SBI_HSM = 0x48534D;
 
-int inline sbi_call_legacy(uint64 which, uint64 arg0, uint64 arg1, uint64 arg2)
+static int inline sbi_call_legacy(uint64 which, uint64 arg0, uint64 arg1, uint64 arg2)
 {
 	register uint64 a0 asm("a0") = arg0;
 	register uint64 a1 asm("a1") = arg1;
@@ -24,7 +24,7 @@ int inline sbi_call_legacy(uint64 which, uint64 arg0, uint64 arg1, uint64 arg2)
 	return a0;
 }
 
-struct sbiret inline sbi_call(int32 eid, int32 fid, uint64 arg0, uint64 arg1, uint64 arg2)
+static struct sbiret inline sbi_call(int32 eid, int32 fid, uint64 arg0, uint64 arg1, uint64 arg2)
 {
 	register uint64 a0 asm("a0") = arg0;
 	register uint64 a1 asm("a1") = arg1;
