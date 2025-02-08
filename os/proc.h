@@ -76,7 +76,11 @@ struct cpu *mycpu();
 struct cpu *getcpu(int i);
 
 static inline struct proc *curr_proc() {
-    return mycpu()->proc;
+    push_off();
+    struct cpu* c = mycpu();
+    struct proc* p = c->proc;
+    pop_off();
+    return p;
 }
 
 // proc.c
