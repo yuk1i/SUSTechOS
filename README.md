@@ -30,7 +30,15 @@ docs (TODO): https://yuk1i.github.io/os-next-docs/
 
 ## User Prog
 
-TODO:...
+```shell
+git clone git@github.com:yuk1i/SUSTechOS-2025S-user.git user
+
+# clean:
+make -C user clean
+
+# make user
+make user
+```
 
 ## Boot log
 
