@@ -277,6 +277,10 @@ int wait(int pid, int *code) {
 void exit(int code) {
     struct proc *p = curr_proc();
 
+    if (p == init_proc) {
+        panic("init process exited");
+    }
+
     acquire(&wait_lock);
 
     // wakeup wait-ing parent.
