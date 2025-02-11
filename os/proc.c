@@ -207,12 +207,9 @@ int fork() {
 }
 
 int exec(char *name, char *args[]) {
-    // exec must free name and arg array.
-    int ret = -1;
-
     struct user_app *app = get_elf(name);
     if (app == NULL)
-        goto out;
+        return -1;
 
     struct proc *p = curr_proc();
 
@@ -230,15 +227,7 @@ int exec(char *name, char *args[]) {
     release(&p->lock);
 
     // syscall will overwrite trapframe->a0 to the return value.
-    ret = p->trapframe->a0;
-
-out:
-    kfree(&kstrbuf, name);
-    for (int i = 0; args[i]; i++) {
-        kfree(&kstrbuf, args[i]);
-        args[i] = NULL;
-    }
-    return ret;
+    return p->trapframe->a0;
 }
 
 int wait(int pid, int *code) {

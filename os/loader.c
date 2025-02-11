@@ -132,7 +132,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     // push argv array
     sp = sp - sizeof(uint64);
     // allocate a NULL
-    for (int i = argc - 1; i > 0; i--) {
+    for (int i = argc - 1; i >= 0; i--) {
         sp             = sp - sizeof(uint64);
         void *kva      = (void *)PA_TO_KVA(useraddr(p->mm, sp));
         *(uint64 *)kva = uargv[i];
@@ -144,7 +144,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     // setup trapframe
     p->trapframe->sp  = sp;
     p->trapframe->epc = ehdr->e_entry;
-    p->trapframe->a0  = argc - 1;
+    p->trapframe->a0  = argc;
     p->trapframe->a1  = uargv_ptr;
     p->state          = RUNNABLE;
 

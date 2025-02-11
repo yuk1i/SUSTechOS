@@ -36,7 +36,14 @@ int64 sys_exec(uint64 __user path, uint64 __user argv) {
     release(&p->mm->lock);
 
     debugf("sys_exec %s\n", kpath);
-    return exec(kpath, arg);
+    
+    int64 ret = exec(kpath, arg);
+
+    kfree(&kstrbuf, kpath);
+    for (int i = 0; arg[i]; i++) {
+        kfree(&kstrbuf, arg[i]);
+    }
+    return ret;
 }
 
 int64 sys_exit(int code) {
@@ -46,7 +53,7 @@ int64 sys_exit(int code) {
 
 int64 sys_wait(int pid, uint64 __user va) {
     struct proc *p = curr_proc();
-    int *code = NULL;
+    int *code      = NULL;
 
     acquire(&p->lock);
     acquire(&p->mm->lock);
@@ -54,9 +61,9 @@ int64 sys_wait(int pid, uint64 __user va) {
 
     if (va != 0) {
         uint64 pa = useraddr(p->mm, va);
-        code = (int *)PA_TO_KVA(pa);
+        code      = (int *)PA_TO_KVA(pa);
     }
-    
+
     release(&p->mm->lock);
 
     return wait(pid, code);
