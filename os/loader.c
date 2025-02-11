@@ -155,6 +155,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
 }
 
 #define INIT_PROC "init"
+extern struct proc *init_proc; // defined in proc.c
 
 // load all apps and init the corresponding `proc` structure.
 int load_init_app() {
@@ -174,6 +175,7 @@ int load_init_app() {
         panic("fail to load init elf.");
     }
     add_task(p);
+    init_proc = p;
     release(&p->lock);
     return 0;
 }

@@ -7,7 +7,7 @@
 #include "trap.h"
 
 struct proc *pool[NPROC];
-static struct proc *init_proc;
+struct proc *init_proc = NULL;
 static allocator_t proc_allocator;
 
 static spinlock_t pid_lock;
@@ -50,7 +50,6 @@ void proc_init() {
     }
     sched_init();
 
-    init_proc = pool[0];
 }
 
 static int allocpid() {
