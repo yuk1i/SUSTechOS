@@ -1,6 +1,6 @@
 import os
 
-TARGET_DIR = "./user/target/stripped/"
+TARGET_DIR = "./user/build/stripped/"
 
 import argparse
 
@@ -48,7 +48,7 @@ f'''
     .string "{app}"
 .align 8
 .elf_{app}:
-    .incbin "./user/target/stripped/{app}"
+    .incbin "{TARGET_DIR}{app}"
 '''
     )
     f.close()

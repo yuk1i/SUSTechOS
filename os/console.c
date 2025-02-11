@@ -27,7 +27,13 @@ void consputc(int c) {
     if (!uart_inited || panicked)  // when panicked, use SBI output
         sbi_putchar(c);
     else {
-        uart_putchar(c);
+        if (c == BACKSPACE) {
+            uart_putchar('\b');
+            uart_putchar(' ');
+            uart_putchar('\b');
+        } else {
+            uart_putchar(c);
+        }
     }
 }
 

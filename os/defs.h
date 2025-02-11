@@ -19,17 +19,21 @@
 // clang-format on
 
 // Kernel defines
-#define ENABLE_SMP     (1)
-#define NCPU           (4)
-#define NPROC          (512)
-#define FD_BUFFER_SIZE (16)
-#define PHYS_MEM_SIZE  (64ull * 1024 * 1024)
+#define ENABLE_SMP    (1)
+#define NCPU          (4)
+#define NPROC         (512)
+#define KSTRING_MAX   (256)
+#define MAXARG        (32)
+#define PHYS_MEM_SIZE (64ull * 1024 * 1024)
 
 // Common macros
 #define MIN(a, b)      (a < b ? a : b)
 #define MAX(a, b)      (a > b ? a : b)
 #define MEMORY_FENCE() __sync_synchronize()
 #define __noreturn     __attribute__((noreturn))
+
+// Kernel string buffer
+extern allocator_t kstrbuf;
 
 // kernel image symbols, defined in kernel.ld
 extern char skernel[], ekernel[];

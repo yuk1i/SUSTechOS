@@ -58,10 +58,8 @@ struct proc {
 
     int index;
     struct mm *mm;
-    struct vma *vma_ustack;
-    struct vma *vma_brk;
-    struct vma *vma_trapframe;
-    struct vma *vma_trampoline;
+    struct vma *vma_ustack;             // special vma for user stack, included in mm->vma list.
+    struct vma *vma_brk;                // special vma for heap, included in mm->vma list.
     struct trapframe *__kva trapframe;  // data page for trampoline.S
     uint64 __kva kstack;                // Virtual address of kernel stack
     struct context context;             // swtch() here to run process
@@ -87,7 +85,7 @@ static inline struct proc *curr_proc() {
 void proc_init();
 struct proc *allocproc();
 int fork();
-int exec(char *);
+int exec(char *name, char* arg[]);
 int wait(int, int *);
 void exit(int);
 int growproc(int n);

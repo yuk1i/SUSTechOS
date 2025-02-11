@@ -27,6 +27,8 @@ static void secondarycpu_init();
 static volatile int booted_count       = 0;
 static volatile int halt_specific_init = 0;
 
+allocator_t kstrbuf;
+
 /** Multiple CPU (SMP) Boot Process:
  * ------------
  * | Boot CPU |  cpuid = 0, m_hartid = random
@@ -192,6 +194,7 @@ static void bootcpu_init() {
     kpgmgrinit();
     uvm_init();
     proc_init();
+    allocator_init(&kstrbuf, "kstrbuf", KSTRING_MAX, 4096);
     loader_init();
     load_init_app();
 

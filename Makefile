@@ -52,7 +52,7 @@ else ifeq ($(LOG), trace)
 CFLAGS += -D LOG_LEVEL_TRACE
 endif
 
-INIT_PROC ?= usershell
+INIT_PROC ?= init
 CFLAGS += -DINIT_PROC=\"$(INIT_PROC)\"
 
 # # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -131,7 +131,7 @@ debug: build/kernel .gdbinit
 CHAPTER ?= $(shell git rev-parse --abbrev-ref HEAD | grep -oP 'ch\K[0-9]')
 
 user:
-	make -C user CHAPTER=$(CHAPTER) BASE=$(BASE)
+	make -C user
 
 test: user run
 

@@ -6,87 +6,94 @@
 #include "timer.h"
 #include "trap.h"
 
-uint64 sys_write(int fd, uint64 va, uint len) {
-    debugf("sys_write fd = %d str = %p, len = %d", fd, va, len);
-    if (fd != STDOUT)
-        return -1;
-    return user_console_write(va, len);
-}
-
-uint64 sys_read(int fd, uint64 va, uint64 len) {
-    debugf("sys_read fd = %d str = %p, len = %d", fd, va, len);
-    if (fd != STDIN)
-        return -1;
-
-    return user_console_read(va, len);
-}
-
-__noreturn void sys_exit(int code) {
-    exit(code);
-    __builtin_unreachable();
-}
-
-uint64 sys_sched_yield() {
-    yield();
-    return 0;
-}
-
-uint64 sys_gettimeofday(uint64 val, int _tz) {
-    struct proc *p = curr_proc();
-    uint64 cycle   = get_cycle();
-    TimeVal t;
-    t.sec  = cycle / CPU_FREQ;
-    t.usec = (cycle % CPU_FREQ) * 1000000 / CPU_FREQ;
-    copy_to_user(p->mm, val, (char *)&t, sizeof(TimeVal));
-    return 0;
-}
-
-uint64 sys_getpid() {
-    return curr_proc()->pid;
-}
-
-uint64 sys_getppid() {
-    struct proc *p = curr_proc();
-    return p->parent == NULL ? 0 : p->parent->pid;
-}
-
-uint64 sys_clone() {
-    debugf("fork!\n");
+int64 sys_fork() {
     return fork();
 }
 
-uint64 sys_exec(uint64 va) {
-    struct proc *p = curr_proc();
-    char name[200];
-    copystr_from_user(p->mm, name, va, 200);
-    debugf("sys_exec %s\n", name);
-    return exec(name);
-}
+int64 sys_exec(uint64 __user path, uint64 __user argv) {
+    char *kpath = kalloc(&kstrbuf);
+    char *arg[MAXARG];
+    memset(kpath, 0, KSTRING_MAX);
+    memset(arg, 0, sizeof(arg));
 
-uint64 sys_wait(int pid, uint64 va) {
     struct proc *p = curr_proc();
 
     acquire(&p->lock);
     acquire(&p->mm->lock);
-    uint64 pa = useraddr(p->mm, va);
-    release(&p->mm->lock);
     release(&p->lock);
 
-    int *code = (int *)PA_TO_KVA(pa);
+    copystr_from_user(p->mm, kpath, path, KSTRING_MAX);
+    for (int i = 0; i < 20; i++) {
+        uint64 useraddr;
+        copy_from_user(p->mm, (char *)&useraddr, argv + i * sizeof(uint64), sizeof(uint64));
+        if (useraddr == 0) {
+            arg[i] = 0;
+            break;
+        }
+        arg[i] = kalloc(&kstrbuf);
+        copystr_from_user(p->mm, arg[i], useraddr, KSTRING_MAX);
+    }
+    release(&p->mm->lock);
+
+    debugf("sys_exec %s\n", kpath);
+    return exec(kpath, arg);
+}
+
+int64 sys_exit(int code) {
+    exit(code);
+    panic("sys_exit should never return");
+}
+
+int64 sys_wait(int pid, uint64 __user va) {
+    struct proc *p = curr_proc();
+    int *code = NULL;
+
+    acquire(&p->lock);
+    acquire(&p->mm->lock);
+    release(&p->lock);
+
+    if (va != 0) {
+        uint64 pa = useraddr(p->mm, va);
+        code = (int *)PA_TO_KVA(pa);
+    }
+    
+    release(&p->mm->lock);
+
     return wait(pid, code);
 }
 
-uint64 sys_spawn(uint64 va) {
-    // TODO: your job is to complete the sys call
-    return -1;
+int64 sys_getpid() {
+    struct proc *cur = curr_proc();
+    int pid;
+
+    acquire(&cur->lock);
+    pid = cur->pid;
+    release(&cur->lock);
+
+    return pid;
 }
 
-uint64 sys_set_priority(long long prio) {
-    // TODO: your job is to complete the sys call
-    return -1;
+int64 sys_getppid() {
+    struct proc *cur = curr_proc();
+    int ppid;
+
+    acquire(&cur->lock);
+    ppid = cur->parent == NULL ? 0 : cur->parent->pid;
+    release(&cur->lock);
+
+    return ppid;
 }
 
-uint64 sys_sbrk(int n) {
+int64 sys_sleep() {
+    panic("unimplemented");
+}
+
+int64 sys_yield() {
+    yield();
+    return 0;
+}
+
+int64 sys_sbrk(int n) {
     uint64 addr;
     struct proc *p = curr_proc();
     panic("sbrk");
@@ -96,26 +103,36 @@ uint64 sys_sbrk(int n) {
     return addr;
 }
 
+int64 sys_mmap() {
+    panic("unimplemented");
+}
+
+int64 sys_read(int fd, uint64 __user va, uint64 len) {
+    return user_console_read(va, len);
+}
+
+int64 sys_write(int fd, uint64 __user va, uint len) {
+    return user_console_write(va, len);
+}
+
 void syscall() {
     struct trapframe *trapframe = curr_proc()->trapframe;
-    int id                      = trapframe->a7, ret;
-    uint64 args[6]              = {trapframe->a0, trapframe->a1, trapframe->a2, trapframe->a3, trapframe->a4, trapframe->a5};
+    int id                      = trapframe->a7;
+    uint64 ret;
+    uint64 args[6] = {trapframe->a0, trapframe->a1, trapframe->a2, trapframe->a3, trapframe->a4, trapframe->a5};
     tracef("syscall %d args = [%x, %x, %x, %x, %x, %x]", id, args[0], args[1], args[2], args[3], args[4], args[5]);
     switch (id) {
-        case SYS_write:
-            ret = sys_write(args[0], args[1], args[2]);
+        case SYS_fork:
+            ret = sys_fork();
             break;
-        case SYS_read:
-            ret = sys_read(args[0], args[1], args[2]);
+        case SYS_exec:
+            ret = sys_exec(args[0], args[1]);
             break;
         case SYS_exit:
             sys_exit(args[0]);
-            // __builtin_unreachable();
-        case SYS_sched_yield:
-            ret = sys_sched_yield();
-            break;
-        case SYS_gettimeofday:
-            ret = sys_gettimeofday(args[0], args[1]);
+            panic("never reach");
+        case SYS_wait:
+            ret = sys_wait(args[0], args[1]);
             break;
         case SYS_getpid:
             ret = sys_getpid();
@@ -123,20 +140,23 @@ void syscall() {
         case SYS_getppid:
             ret = sys_getppid();
             break;
-        case SYS_clone:  // SYS_fork
-            ret = sys_clone();
+        case SYS_sleep:
+            ret = sys_sleep();
             break;
-        case SYS_execve:
-            ret = sys_exec(args[0]);
-            break;
-        case SYS_wait4:
-            ret = sys_wait(args[0], args[1]);
-            break;
-        case SYS_spawn:
-            ret = sys_spawn(args[0]);
+        case SYS_yield:
+            ret = sys_yield();
             break;
         case SYS_sbrk:
             ret = sys_sbrk(args[0]);
+            break;
+        case SYS_mmap:
+            ret = sys_mmap();
+            break;
+        case SYS_read:
+            ret = sys_read(args[0], args[1], args[2]);
+            break;
+        case SYS_write:
+            ret = sys_write(args[0], args[1], args[2]);
             break;
         default:
             ret = -1;

@@ -7,7 +7,7 @@
 void loader_init();
 int load_init_app();
 struct user_app *get_elf(char *name);
-int load_user_elf(struct user_app *, struct proc *);
+int load_user_elf(struct user_app *, struct proc *, char *args[]);
 
 #define USTACK_START 0xffff0000
 #define USTACK_SIZE (PGSIZE * 8)

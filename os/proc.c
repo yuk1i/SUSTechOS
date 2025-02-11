@@ -1,10 +1,10 @@
 #include "proc.h"
 
 #include "defs.h"
-#include "queue.h"
-#include "trap.h"
 #include "kalloc.h"
 #include "loader.h"
+#include "queue.h"
+#include "trap.h"
 
 struct proc *pool[NPROC];
 static struct proc *init_proc;
@@ -55,15 +55,15 @@ void proc_init() {
 
 static int allocpid() {
     static int PID = 1;
-    int retpid = -1;
-    
+    int retpid     = -1;
+
     acquire(&pid_lock);
     retpid = PID++;
     release(&pid_lock);
 
     return retpid;
 }
- static void first_sched_ret(void) {
+static void first_sched_ret(void) {
     release(&curr_proc()->lock);
     intr_off();
     usertrapret();
@@ -95,14 +95,19 @@ found:
     p->vma_ustack = NULL;
     p->vma_brk    = NULL;
     // only allocate trampoline and trapframe here.
-    p->vma_trampoline = mm_mappagesat(p->mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X, false);
-    uint64 __pa tf    = (uint64)kallocpage();
+    if (mm_mappageat(p->mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X))
+        panic("trampoline");
+    uint64 __pa tf = (uint64)kallocpage();
     if (!tf)
         panic("tf");
-    p->vma_trapframe = mm_mappagesat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W | PTE_X, false);
-    p->trapframe     = (struct trapframe *)PA_TO_KVA(tf);
-    p->parent        = NULL;
-    p->exit_code     = 0;
+    if (mm_mappageat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W | PTE_X))
+        panic("trapframe");
+
+    release(&p->mm->lock);
+
+    p->trapframe = (struct trapframe *)PA_TO_KVA(tf);
+    p->parent    = NULL;
+    p->exit_code = 0;
     memset(&p->context, 0, sizeof(p->context));
     memset((void *)p->kstack, 0, KERNEL_STACK_SIZE);
     memset((void *)p->trapframe, 0, PGSIZE);
@@ -123,10 +128,7 @@ static void freeproc(struct proc *p) {
     p->killed     = 0;
     p->parent     = NULL;
 
-    freevma(p->vma_trampoline, false);
-    freevma(p->vma_trapframe, true);
-    p->vma_trampoline = NULL;
-    p->vma_trapframe  = NULL;
+    kfreepage((void *)KVA_TO_PA(p->trapframe));
     mm_free(p->mm);
     p->vma_brk    = NULL;
     p->vma_ustack = NULL;
@@ -172,18 +174,23 @@ void wakeup(void *chan) {
 }
 
 int fork() {
-    struct proc *np;
+    struct proc *np = allocproc();
     // Allocate process.
-    if ((np = allocproc()) == NULL) {
+    if (np == NULL) {
         panic("allocproc");
     }
 
     struct proc *p = curr_proc();
     acquire(&p->lock);
+    acquire(&p->mm->lock);
+    acquire(&np->mm->lock);
 
     // Copy user memory from parent to child.
     if (mm_copy(p->mm, np->mm))
         panic("mm_copy");
+
+    release(&p->mm->lock);
+    release(&np->mm->lock);
 
     // copy saved user registers.
     *(np->trapframe) = *(p->trapframe);
@@ -199,23 +206,39 @@ int fork() {
     return np->pid;
 }
 
-int exec(char *name) {
+int exec(char *name, char *args[]) {
+    // exec must free name and arg array.
+    int ret = -1;
+
     struct user_app *app = get_elf(name);
     if (app == NULL)
-        return -1;
+        goto out;
+
     struct proc *p = curr_proc();
 
     acquire(&p->lock);
 
     // execve does not preserve memory mappings:
-    //  free memory below program_brk, and ustack
-    //  but keep trapframe and trampoline, because it belongs to curr_proc().
+    //  free VMAs including program_brk, and ustack
+    //  However, keep trapframe and trampoline, because it belongs to curr_proc().
+    acquire(&p->mm->lock);
     mm_free_pages(p->mm);
+    release(&p->mm->lock);
 
-    load_user_elf(app, p);
+    load_user_elf(app, p, args);
 
     release(&p->lock);
-    return 0;
+
+    // syscall will overwrite trapframe->a0 to the return value.
+    ret = p->trapframe->a0;
+
+out:
+    kfree(&kstrbuf, name);
+    for (int i = 0; args[i]; i++) {
+        kfree(&kstrbuf, args[i]);
+        args[i] = NULL;
+    }
+    return ret;
 }
 
 int wait(int pid, int *code) {
@@ -256,7 +279,7 @@ int wait(int pid, int *code) {
             return -1;
         }
 
-        infof("pid %d sleeps for wait", p->pid);
+        debugf("pid %d sleeps for wait", p->pid);
         // Wait for a child to exit.
         sleep(p, &wait_lock);  // DOC: wait-sleep
     }
