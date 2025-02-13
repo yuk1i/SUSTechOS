@@ -13,7 +13,7 @@ PY = python3
 GDB = $(TOOLPREFIX)gdb
 CP = cp
 BUILDDIR = build
-C_SRCS := $(wildcard $K/*.c) $(wildcard $K/drivers/*.c)
+C_SRCS := $(wildcard $K/*.c) $(wildcard $K/drivers/*.c) $(wildcard $K/ktest/*.c)
 AS_SRCS := $(wildcard $K/*.S)
 
 ifeq (,$(findstring $K/link_app.S,$(AS_SRCS)))
@@ -111,7 +111,10 @@ QEMUOPTS = \
 	-cpu rv64,svadu=off \
 	-m 512M \
 	-kernel build/kernel	\
-
+	-device virtio-serial-device \
+	-chardev file,id=ktest,path=ktest_out.log \
+	-device virtconsole,chardev=ktest \
+		
 run: build/kernel
 	$(QEMU) $(QEMUOPTS)
 

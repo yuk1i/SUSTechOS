@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "defs.h"
 #include "kalloc.h"
+#include "ktest/ktest.h"
 #include "loader.h"
 #include "plic.h"
 #include "proc.h"
@@ -190,6 +191,9 @@ static void bootcpu_init() {
     trap_init();
     console_init();
     printf("UART inited.\n");
+    ktest_init();
+    printf("Ktest inited.\n");
+    ktest_assert(0, "Should failed");
     plicinit();
     kpgmgrinit();
     uvm_init();

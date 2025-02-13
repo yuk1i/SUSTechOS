@@ -78,6 +78,8 @@ static pagetable_t kvmmake() {
     // Step.3 : Kernel Device MMIO :
     kvmmap(kpgtbl, KERNEL_PLIC_BASE, PLIC_PHYS, KERNEL_PLIC_SIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
     kvmmap(kpgtbl, KERNEL_UART0_BASE, UART0_PHYS, KERNEL_UART0_SIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
+    // Only use MMIO 7 as ktest output
+    kvmmap(kpgtbl, KERNEL_VIRTIO_MMIO7_BASE, VIRTIO_MMIO7_PHYS, KERNEL_VIRTIO_MMIO7_SIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
 
     // Step.4 : Kernel Scheduler stack:
     uint64 sched_stack = KERNEL_STACK_SCHED;
