@@ -43,7 +43,7 @@ void kfreepage(void *__pa pa) {
 
     uint64 __kva kvaddr = PA_TO_KVA(pa);
     if (!PGALIGNED((uint64)pa) || !(kpage_allocator_base <= kvaddr && kvaddr < kpage_allocator_base + kpage_allocator_size))
-        panic("kfree: invalid page %p", pa);
+        panic("kfreepage: invalid page %p", pa);
     // Fill with junk to catch dangling refs.
     if (kalloc_inited)
         debugf("free : %p", pa);
@@ -70,6 +70,9 @@ void *__pa kallocpage() {
     }
     debugf("alloc: %p, by %p", l, ra);
     release(&kpagelock);
+
+    if (l == 0)
+        return 0;
     return (void *)KVA_TO_PA((uint64)l);
 }
 
