@@ -350,5 +350,5 @@ void exit(int code) {
     release(&wait_lock);
 
     sched();
-    panic("exit should never return");
+    panic_never_reach();
 }

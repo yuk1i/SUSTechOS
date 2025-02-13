@@ -48,7 +48,7 @@ int64 sys_exec(uint64 __user path, uint64 __user argv) {
 
 int64 sys_exit(int code) {
     exit(code);
-    panic("sys_exit should never return");
+    panic_never_reach();
 }
 
 int64 sys_wait(int pid, uint64 __user va) {
@@ -156,7 +156,7 @@ void syscall() {
             break;
         case SYS_exit:
             sys_exit(args[0]);
-            panic("never reach");
+            panic_never_reach();
         case SYS_wait:
             ret = sys_wait(args[0], args[1]);
             break;

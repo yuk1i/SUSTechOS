@@ -133,6 +133,8 @@ enum LOG_COLOR {
                 ##__VA_ARGS__);                            \
     } while (0)
 
+#define panic_never_reach() panic("should never reach here")
+
 #define assert(x)                              \
     do {                                       \
         if (!(x))                              \

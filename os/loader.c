@@ -166,7 +166,7 @@ int load_init_app() {
 
     struct proc *p = allocproc();
     if (p == NULL) {
-        panic("allocproc\n");
+        panic("allocproc");
     }
     infof("load init proc %s", INIT_PROC);
 

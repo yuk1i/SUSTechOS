@@ -13,7 +13,7 @@ void init_queue(struct queue *q) {
 void push_queue(struct queue *q, void *data) {
     acquire(&q->lock);
     if (!q->empty && q->front == q->tail) {
-        panic("queue shouldn't be overflow");
+        panic("queue overflow");
     }
     q->empty         = 0;
     q->data[q->tail] = data;

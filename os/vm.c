@@ -327,7 +327,7 @@ err:
                 uint64 pte_woflags = *pte & ~PTE_RWX;
                 *pte               = pte_woflags | vma->pte_flags;
             } else {
-                panic("remap: should never happen");
+                panic_never_reach();
             }
         }
     }

@@ -45,10 +45,10 @@ void kfreepage(void *__pa pa) {
 
     uint64 __kva kvaddr = PA_TO_KVA(pa);
     if (!PGALIGNED((uint64)pa) || !(kpage_allocator_base <= kvaddr && kvaddr < kpage_allocator_base + kpage_allocator_size))
-        panic("kfreepage: invalid page %p", pa);
+        panic("invalid page %p", pa);
     // Fill with junk to catch dangling refs.
     if (kalloc_inited)
-        debugf("free : %p", pa);
+        debugf("free: %p", pa);
     memset((void *)kvaddr, 0xdd, PGSIZE);
     l             = (struct linklist *)kvaddr;
     l->next       = kmem.freelist;
@@ -143,8 +143,10 @@ void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uin
 void *kalloc(struct allocator *alloc) {
     assert(alloc);
     acquire(&alloc->lock);
+
     if (alloc->available_count == 0)
         panic("unavailable");
+
     alloc->available_count--;
 
     void *ret;
@@ -159,7 +161,7 @@ void *kalloc(struct allocator *alloc) {
         memset(l, 0xff, sizeof(*l));
         memset(ret, 0xfe, alloc->object_size);
     } else {
-        panic("kalloc: no free object, increase the count when init");
+        panic("should be guarded by available_count");
     }
     release(&alloc->lock);
 
