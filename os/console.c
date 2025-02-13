@@ -2,6 +2,7 @@
 
 #include "defs.h"
 #include "sbi.h"
+#include "debug.h"
 
 static int uart_inited = false;
 static void uart_putchar(int);
@@ -88,7 +89,11 @@ static void consintr(int c) {
     acquire(&cons.lock);
 
     switch (c) {
-        case C('P'):  // Print process list.
+        case C('P'):
+            print_procs();
+            break;
+        case C('Q'):
+            print_kpgmgr();
             break;
         case C('U'):  // Kill line.
             while (cons.e != cons.w && cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n') {
@@ -96,7 +101,6 @@ static void consintr(int c) {
                 consputc(BACKSPACE);
             }
             break;
-        case C('H'):  // Backspace
         case '\x7f':  // Delete key
             if (cons.e != cons.w) {
                 cons.e--;
@@ -161,9 +165,12 @@ int64 user_console_write(uint64 __user buf, int64 len) {
     copy_from_user(mm, kbuf, buf, len);
     release(&mm->lock);
 
+    // we only sync on user's write.
+    acquire(&uart_tx_lock);
     for (int64 i = 0; i < len; i++) {
         uart_putchar(kbuf[i]);
     }
+    release(&uart_tx_lock);
     return len;
 }
 

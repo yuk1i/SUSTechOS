@@ -15,6 +15,7 @@ int kalloc_inited = 0;
 extern uint64 __kva kpage_allocator_base;
 extern uint64 __kva kpage_allocator_size;
 static spinlock_t kpagelock;
+int64 freepages_count;
 
 void kpgmgrinit() {
     spinlock_init(&kpagelock, "pageallocator");
@@ -28,6 +29,7 @@ void kpgmgrinit() {
 
     for (uint64 p = kpage_allocator_end - PGSIZE; p >= kpage_allocator_base; p -= PGSIZE) {
         kfreepage((void *)KVA_TO_PA(p));
+        freepages_count++;
     }
     kalloc_inited = 1;
 }
@@ -52,6 +54,8 @@ void kfreepage(void *__pa pa) {
     l->next       = kmem.freelist;
     kmem.freelist = l;
 
+    freepages_count++;
+
     release(&kpagelock);
 }
 
@@ -66,6 +70,7 @@ void *__pa kallocpage() {
     l = kmem.freelist;
     if (l) {
         kmem.freelist = l->next;
+        freepages_count--;
         memset((char *)l, 0xaf, PGSIZE);  // fill with junk
     }
     debugf("alloc: %p, by %p", l, ra);

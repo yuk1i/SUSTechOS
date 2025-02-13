@@ -26,6 +26,27 @@ void print_ktrapframe(struct ktrapframe *tf) {
     printf("t4: %p   t5: %p   t6: %p  \n\n", tf->t4, tf->t5, tf->t6);
 }
 
+void print_procs() {
+    extern struct proc *pool[];
+
+    for (int i = 0; i < NPROC; i++) {
+        struct proc *p = pool[i];
+        if (p->state == UNUSED)
+            continue;
+        printf("proc %d: %p\n", i, p);
+        printf("  pid: %d, state: %d\n", p->pid, p->state);
+        printf("  mm: %p\n", p->mm);
+        printf("  parent: %p", p->parent);
+        if (p->parent)
+            printf(" pid: %d", p->parent->pid);
+        printf("\n");
+    }
+}
+void print_kpgmgr() {
+    extern int64 freepages_count;
+    printf("freepages_count: %d\n", freepages_count);
+}
+
 void print_sysregs(int explain) {
     uint64 sstatus = r_sstatus();
     uint64 scause  = r_scause();
