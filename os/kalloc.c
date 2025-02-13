@@ -71,8 +71,10 @@ void *__pa kallocpage() {
     debugf("alloc: %p, by %p", l, ra);
     release(&kpagelock);
 
-    if (l == 0)
+    if (l == 0) {
+        warnf("out of memory, called by %p", ra);
         return 0;
+    }
     return (void *)KVA_TO_PA((uint64)l);
 }
 

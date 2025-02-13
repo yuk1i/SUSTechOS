@@ -49,7 +49,6 @@ void proc_init() {
         pool[i]      = p;
     }
     sched_init();
-
 }
 
 static int allocpid() {
@@ -86,27 +85,39 @@ struct proc *allocproc() {
 found:
     // initialize a proc
     tracef("init proc %p", p);
-    p->pid   = allocpid();
-    p->state = USED;
-    p->mm    = mm_create();
+    p->parent    = NULL;
+    p->exit_code = 0;
+    p->sleep_chan = NULL;
+
+    // ==== Resources Allocation ====
+
+    p->pid       = allocpid();
+    p->state     = USED;
+    p->mm        = mm_create();
     if (!p->mm)
-        panic("mm");
-    p->vma_ustack = NULL;
-    p->vma_brk    = NULL;
+        goto err_free_proc;
+
     // only allocate trampoline and trapframe here.
     if (mm_mappageat(p->mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X))
-        panic("trampoline");
+        goto err_free_mm;
+
     uint64 __pa tf = (uint64)kallocpage();
     if (!tf)
-        panic("tf");
+        goto err_free_mm;
+
     if (mm_mappageat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W | PTE_X))
-        panic("trapframe");
+        goto err_free_tf;
 
     release(&p->mm->lock);
 
+    // ==== Resources Allocation Ends ====
+
+    // loader will initialize these:
+    p->vma_ustack = NULL;
+    p->vma_brk    = NULL;
+
+    // prepare trapframe and the first return context.
     p->trapframe = (struct trapframe *)PA_TO_KVA(tf);
-    p->parent    = NULL;
-    p->exit_code = 0;
     memset(&p->context, 0, sizeof(p->context));
     memset((void *)p->kstack, 0, KERNEL_STACK_SIZE);
     memset((void *)p->trapframe, 0, PGSIZE);
@@ -114,7 +125,20 @@ found:
     p->context.sp = p->kstack + KERNEL_STACK_SIZE;
 
     assert(holding(&p->lock));
+
     return p;
+    
+    // Resources clean up.
+err_free_tf:
+    kfreepage((void *)tf);
+err_free_mm:
+    mm_free(p->mm);
+err_free_proc:
+    p->mm    = NULL;
+    p->state = UNUSED;
+    p->pid   = -1;
+    release(&p->lock);
+    return NULL;
 }
 
 static void freeproc(struct proc *p) {
@@ -127,11 +151,11 @@ static void freeproc(struct proc *p) {
     p->killed     = 0;
     p->parent     = NULL;
 
-    kfreepage((void *)KVA_TO_PA(p->trapframe));
-
     acquire(&p->mm->lock);
     mm_free(p->mm);
-    p->mm = NULL;
+
+    kfreepage((void *)KVA_TO_PA(p->trapframe));
+    p->mm         = NULL;
     p->vma_brk    = NULL;
     p->vma_ustack = NULL;
 }
@@ -179,7 +203,7 @@ int fork() {
     struct proc *np = allocproc();
     // Allocate process.
     if (np == NULL) {
-        panic("allocproc");
+        return -1;
     }
 
     struct proc *p = curr_proc();
@@ -189,7 +213,7 @@ int fork() {
 
     // Copy user memory from parent to child.
     if (mm_copy(p->mm, np->mm))
-        panic("mm_copy");
+        goto err_free;
 
     release(&p->mm->lock);
     release(&np->mm->lock);
@@ -206,6 +230,11 @@ int fork() {
     release(&p->lock);
 
     return np->pid;
+
+err_free:
+    freeproc(np);
+    release(&np->lock);
+    return -1;
 }
 
 int exec(char *name, char *args[]) {
@@ -224,7 +253,11 @@ int exec(char *name, char *args[]) {
     mm_free_pages(p->mm);
     release(&p->mm->lock);
 
-    load_user_elf(app, p, args);
+    if (load_user_elf(app, p, args) < 0) {
+        release(&p->lock);
+        exit(-1);
+        return -1;
+    }
 
     release(&p->lock);
 

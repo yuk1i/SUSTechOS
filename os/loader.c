@@ -53,8 +53,8 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         vma->pte_flags  = pte_perm;
 
         if (mm_mappages(vma)) {
-            vm_print(p->mm->pgt);
-            panic("mm_mappages");
+            errorf("mm_mappages");
+            return -1;
         }
 
         int64 file_off      = 0;

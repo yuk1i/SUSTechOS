@@ -28,8 +28,12 @@ static uint64 __kva allocsetuppage() {
 
 static uint64 __kva allockernelpage() {
     extern int kalloc_inited;
-    if (kalloc_inited)
-        return PA_TO_KVA(kallocpage());
+    if (kalloc_inited) {
+        void *__pa pa = kallocpage();
+        if (pa == 0)
+            panic("out of memory");
+        return PA_TO_KVA(pa);
+    }
     return allocsetuppage();
 }
 
@@ -39,7 +43,7 @@ static uint64 __kva allockernelpage() {
 void kvm_init() {
     init_page_allocator      = KERNEL_DIRECT_MAPPING_BASE + kernel_image_end_2M;
     init_page_allocator_base = init_page_allocator;
-    infof("setup basic page allocator: base %p, end %p", init_page_allocator, init_page_allocator + PGSIZE_2M);
+    infof("boot-stage page allocator: base %p, end %p", init_page_allocator, init_page_allocator + PGSIZE_2M);
 
     kernel_pagetable = kvmmake();
 
@@ -48,6 +52,9 @@ void kvm_init() {
     asm volatile("csrw satp, %0" : : "r"(satp));
     sfence_vma();
     infof("enable pageing at %p", r_satp());
+
+    infof("boot-stage page allocator ends up: base %p, used: %p", init_page_allocator_base, init_page_allocator);
+    init_page_allocator = 0xdead;
 
     // infof("enable sstatus.SUM == 0", r_sstatus());
     // w_sstatus(r_sstatus() & ~SSTATUS_SIE);
@@ -99,7 +106,9 @@ static pagetable_t kvmmake() {
 
     // RISC-V CPU maps DDR starting at 0x8000_0000
     const uint64 physical_mems = PHYS_MEM_SIZE;
-    uint64 available_mems      = physical_mems - (kernel_image_end_2M - RISCV_DDR_BASE);
+    int64 available_mems       = physical_mems - (kernel_image_end_2M - RISCV_DDR_BASE);
+    if (available_mems <= 0)
+        panic("No available memory for kernel direct mapping");
     infof("Memory after kernel image (phys) size = %p", available_mems);
 
     // map remaining pages to KERNEL_DIRECT_MAPPING_BASE + pa

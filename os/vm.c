@@ -36,8 +36,12 @@ pte_t *walk(struct mm *mm, uint64 va, int alloc) {
         if (*pte & PTE_V) {
             pagetable = (pagetable_t)PA_TO_KVA(PTE2PA(*pte));
         } else {
-            if (!alloc || (pagetable = (pde_t *)PA_TO_KVA(kallocpage())) == 0)
+            if (!alloc)
                 return 0;
+            void *pa = kallocpage();
+            if (!pa)
+                return 0;
+            pagetable = (pagetable_t)PA_TO_KVA(pa);
             memset(pagetable, 0, PGSIZE);
             *pte = PA2PTE(KVA_TO_PA(pagetable)) | PTE_V;
         }
@@ -86,9 +90,12 @@ struct mm *mm_create() {
     mm->vma    = NULL;
     mm->refcnt = 1;
 
-    mm->pgt = (pagetable_t)PA_TO_KVA(kallocpage());
-    if (!mm->pgt)
+    void *pa = kallocpage();
+    if (!pa) {
+        warnf("kallocpage failed");
         goto free_mm;
+    }
+    mm->pgt = (pagetable_t)PA_TO_KVA(pa);
     memset(mm->pgt, 0, PGSIZE);
 
     acquire(&mm->lock);
@@ -121,13 +128,23 @@ void mm_free_pages(struct mm *mm) {
     mm->vma = NULL;
 }
 
+static void freepgt(pagetable_t pgt) {
+    for (int i = 0; i < 512; i++) {
+        if ((pgt[i] & PTE_V) && (pgt[i] & PTE_RWX) == 0) {
+            freepgt((pagetable_t)PA_TO_KVA(PTE2PA(pgt[i])));
+            pgt[i] = 0;
+        }
+    }
+    kfreepage((void *)KVA_TO_PA(pgt));
+}
+
 void mm_free(struct mm *mm) {
     assert(holding(&mm->lock));
     assert(mm->refcnt > 0);
 
     mm_free_pages(mm);
+    freepgt(mm->pgt);
 
-    kfreepage((void *)KVA_TO_PA(mm->pgt));
     int oldref = mm->refcnt--;
     release(&mm->lock);
 
@@ -259,13 +276,13 @@ int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
             }
             if (*pte & PTE_V) {
                 // mapping exists, update flags.
-                uint64 pte_woflags = *pte & ~(PTE_R | PTE_W | PTE_X);
+                uint64 pte_woflags = *pte & ~PTE_RWX;
                 *pte               = pte_woflags | pte_flags;
             } else {
                 // mapping does not exist, create it.
                 void *pa = kallocpage();
                 if (!pa) {
-                    errorf("remap: kallocpage, va = %p", va);
+                    errorf("kallocpage, va = %p", va);
                     goto err;
                 }
                 *pte = PA2PTE(pa) | pte_flags | PTE_V;
@@ -307,7 +324,7 @@ err:
             // mapping to be preseved.
             pte = walk(mm, va, 0);
             if (pte && (*pte & PTE_V)) {
-                uint64 pte_woflags = *pte & ~(PTE_R | PTE_W | PTE_X);
+                uint64 pte_woflags = *pte & ~PTE_RWX;
                 *pte               = pte_woflags | vma->pte_flags;
             } else {
                 panic("remap: should never happen");
