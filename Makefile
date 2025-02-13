@@ -91,10 +91,6 @@ build/kernel: $(OBJS) os/kernel.ld
 	$(OBJDUMP) -S $(BUILDDIR)/kernel > $(BUILDDIR)/kernel.asm
 	$(OBJDUMP) -t $(BUILDDIR)/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(BUILDDIR)/kernel.sym
 	@echo 'Build kernel done'
-	cp $(BUILDDIR)/kernel /data/os-riscv/tftp-root/
-	cp $(BUILDDIR)/kernel.bin /data/os-riscv/tftp-root/
-	@echo 'Copy kernel to TFTP'
-	ls -lha /data/os-riscv/tftp-root/
 
 clean:
 	rm -rf $(BUILDDIR) os/kernel_app.ld os/link_app.S
@@ -125,6 +121,11 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 
 debug: build/kernel .gdbinit
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
+	# sleep 1
+	# $(GDB)
+
+debugsmp: build/kernel .gdbinit
+	$(QEMU) $(QEMUOPTS) -smp 4 -S $(QEMUGDB)
 	# sleep 1
 	# $(GDB)
 
