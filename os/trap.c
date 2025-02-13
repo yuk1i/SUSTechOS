@@ -73,6 +73,8 @@ void trap_init() {
 }
 
 void unknown_trap() {
+    print_sysregs(true);
+    vm_print(curr_proc()->mm->pgt);
     errorf("unknown trap: %p, stval = %p", r_scause(), r_stval());
     exit(-1);
 }
@@ -120,6 +122,9 @@ void usertrap() {
             case LoadPageFault:
             case StorePageFault:
             case InstructionPageFault: {
+                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.",
+                      r_stval(),
+                      trapframe->epc);
                 uint64 addr     = r_stval();
                 pagetable_t pgt = curr_proc()->mm->pgt;
                 // vm_print(pgt);

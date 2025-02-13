@@ -100,14 +100,33 @@ int64 sys_yield() {
     return 0;
 }
 
-int64 sys_sbrk(int n) {
-    uint64 addr;
+int64 sys_sbrk(int64 n) {
+    int64 ret;
     struct proc *p = curr_proc();
-    panic("sbrk");
-    // addr = p->program_brk;
-    // if (growproc(n) < 0)
-    // return -1;
-    return addr;
+    
+    acquire(&p->lock);
+    acquire(&p->mm->lock);
+
+    struct vma* vma_brk = p->vma_brk;
+
+    release(&p->lock);
+
+    int64 old_brk = vma_brk->vm_end;
+    int64 new_brk = vma_brk->vm_end + n;
+
+    if (new_brk < vma_brk->vm_start) {
+        warnf("userprog requested to shrink brk, but underflow.");
+        ret = -1;
+    } else {
+        ret = mm_remap(vma_brk, vma_brk->vm_start, new_brk, vma_brk->pte_flags);
+    }
+
+    release(&p->mm->lock);
+
+    if (ret == 0) {
+        return old_brk;
+    }
+    return ret;
 }
 
 int64 sys_mmap() {

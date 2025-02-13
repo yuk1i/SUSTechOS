@@ -62,6 +62,7 @@ void freevma(struct vma* vma, int free_phy_page);
 void mm_free_pages(struct mm* mm);
 void mm_free(struct mm* mm);
 int mm_mappages(struct vma* vma);
+int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags);
 int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags);
 int mm_copy(struct mm* old, struct mm* new);
 

@@ -3,8 +3,8 @@
 #include "defs.h"
 #include "kalloc.h"
 
-allocator_t mm_allocator;
-allocator_t vma_allocator;
+static allocator_t mm_allocator;
+static allocator_t vma_allocator;
 
 void uvm_init() {
     allocator_init(&mm_allocator, "mm", sizeof(struct mm), 16384);
@@ -122,13 +122,16 @@ void mm_free_pages(struct mm *mm) {
 }
 
 void mm_free(struct mm *mm) {
-    acquire(&mm->lock);
+    assert(holding(&mm->lock));
+    assert(mm->refcnt > 0);
+
     mm_free_pages(mm);
-    release(&mm->lock);
-    
+
     kfreepage((void *)KVA_TO_PA(mm->pgt));
-    mm->refcnt--;
-    if (mm->refcnt == 0) {
+    int oldref = mm->refcnt--;
+    release(&mm->lock);
+
+    if (oldref == 1) {
         kfree(&mm_allocator, mm);
     }
 }
@@ -151,6 +154,24 @@ void freevma(struct vma *vma, int free_phy_page) {
     sfence_vma();
 }
 
+static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma *exclude) {
+    assert(holding(&mm->lock));
+
+    if (start == end)
+        return 0;
+
+    struct vma *vma = mm->vma;
+    while (vma) {
+        if (vma != exclude) {
+            if ((start < vma->vm_end && start >= vma->vm_start) || (end > vma->vm_start && end <= vma->vm_end)) {
+                return -1;
+            }
+        }
+        vma = vma->next;
+    }
+    return 0;
+}
+
 /**
  * @brief Map virtual address defined in @vma.
  * Addresses must be aligned to PGSIZE.
@@ -169,6 +190,11 @@ int mm_mappages(struct vma *vma) {
     assert((vma->pte_flags & PTE_R) || (vma->pte_flags & PTE_W) || (vma->pte_flags & PTE_X));
 
     assert(holding(&vma->owner->lock));
+
+    if (vma_check_overlap(vma->owner, vma->vm_start, vma->vm_end, vma)) {
+        errorf("overlap: [%p, %p)", vma->vm_start, vma->vm_end);
+        return -1;
+    }
 
     tracef("mappages: [%p, %p)", vma->vm_start, vma->vm_end);
 
@@ -202,16 +228,107 @@ int mm_mappages(struct vma *vma) {
     return 0;
 }
 
+int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
+    assert(PGALIGNED(start));
+    assert(PGALIGNED(end));
+    assert((pte_flags & PTE_R) || (pte_flags & PTE_W) || (pte_flags & PTE_X));
+
+    pte_t *pte;
+    struct mm *mm = vma->owner;
+    assert(holding(&mm->lock));
+
+    if (vma_check_overlap(mm, start, end, vma)) {
+        errorf("overlap: [%p, %p)", start, end);
+        return -1;
+    }
+
+    const uint64 iterstart = MIN(start, vma->vm_start);
+    const uint64 iterend   = MAX(end, vma->vm_end);
+
+    // first, consider all cases requiring new physical page.
+    for (uint64 va = iterstart; va < iterend; va += PGSIZE) {
+        if (va < start || va >= end) {
+            // mapping to be removed.
+            // however, we do not handle them now.
+        } else {
+            // mapping to be preseved or created.
+            pte = walk(mm, va, 1);
+            if (!pte) {
+                errorf("remap: walk failed, va = %p", va);
+                goto err;
+            }
+            if (*pte & PTE_V) {
+                // mapping exists, update flags.
+                uint64 pte_woflags = *pte & ~(PTE_R | PTE_W | PTE_X);
+                *pte               = pte_woflags | pte_flags;
+            } else {
+                // mapping does not exist, create it.
+                void *pa = kallocpage();
+                if (!pa) {
+                    errorf("remap: kallocpage, va = %p", va);
+                    goto err;
+                }
+                *pte = PA2PTE(pa) | pte_flags | PTE_V;
+            }
+        }
+    }
+
+    // then, we are free from trying to allocate new physical pages.
+    for (uint64 va = iterstart; va < iterend; va += PGSIZE) {
+        if (va < start || va >= end) {
+            // this mapping should be removed
+            pte = walk(mm, va, 0);
+            if (pte && (*pte & PTE_V)) {
+                kfreepage((void *)PTE2PA(*pte));
+                *pte = 0;
+            } else {
+                errorf("remap: mapping should exist, va = %p", va);
+                return -1;
+            }
+        }
+    }
+    sfence_vma();
+
+    vma->vm_start  = start;
+    vma->vm_end    = end;
+    vma->pte_flags = pte_flags;
+    return 0;
+err:
+    // restore every mapping back
+    for (uint64 va = iterstart; va < iterend; va += PGSIZE) {
+        if (va < vma->vm_start || va >= vma->vm_end) {
+            // this mapping should be removed
+            pte = walk(mm, va, 0);
+            if (pte && (*pte & PTE_V)) {
+                kfreepage((void *)PTE2PA(*pte));
+                *pte = 0;
+            }
+        } else {
+            // mapping to be preseved.
+            pte = walk(mm, va, 0);
+            if (pte && (*pte & PTE_V)) {
+                uint64 pte_woflags = *pte & ~(PTE_R | PTE_W | PTE_X);
+                *pte               = pte_woflags | vma->pte_flags;
+            } else {
+                panic("remap: should never happen");
+            }
+        }
+    }
+    return -1;
+}
+
 int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
     assert(holding(&mm->lock));
-    tracef("mappagesat: %p -> %p", va, pa);
 
-    struct vma *vma = kalloc(&vma_allocator);
-    memset(vma, 0, sizeof(*vma));
-    vma->owner     = mm;
-    vma->pte_flags = flags;
-    vma->vm_start  = va;
-    vma->vm_end    = va + PGSIZE;
+    if (!IS_USER_VA(va))
+        panic("invalid user VA");
+
+    if (vma_check_overlap(mm, va, va + PGSIZE, NULL)) {
+        errorf("overlap: [%p, %p)", va, va + PGSIZE);
+        return -1;
+    }
+
+    tracef("mappagesat: %p -> %p", va, pa);
 
     pte_t *pte;
 
@@ -224,7 +341,7 @@ int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
         vm_print(mm->pgt);
         return -1;
     }
-    *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
+    *pte = PA2PTE(pa) | flags | PTE_V;
     sfence_vma();
 
     return 0;
@@ -234,11 +351,6 @@ int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
 // Copy the pagetable page and all the user pages.
 // Return 0 on success, -1 on error.
 int mm_copy(struct mm *old, struct mm *new) {
-    // infof("old mm:");
-    // mm_print(old);
-    // infof("new mm:");
-    // mm_print(new);
-
     assert(holding(&old->lock));
     assert(holding(&new->lock));
     struct vma *vma = old->vma;

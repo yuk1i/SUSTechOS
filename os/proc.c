@@ -128,7 +128,10 @@ static void freeproc(struct proc *p) {
     p->parent     = NULL;
 
     kfreepage((void *)KVA_TO_PA(p->trapframe));
+
+    acquire(&p->mm->lock);
     mm_free(p->mm);
+    p->mm = NULL;
     p->vma_brk    = NULL;
     p->vma_ustack = NULL;
 }
