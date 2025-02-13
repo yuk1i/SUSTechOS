@@ -115,6 +115,24 @@ struct vma *mm_create_vma(struct mm *mm) {
     return vma;
 }
 
+static void freevma(struct vma *vma, int free_phy_page) {
+    assert(holding(&vma->owner->lock));
+    assert(PGALIGNED(vma->vm_start) && PGALIGNED(vma->vm_end));
+
+    struct mm *mm = vma->owner;
+    for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
+        pte_t *pte = walk(mm, va, false);
+        if (pte && (*pte & PTE_V)) {
+            if (free_phy_page)
+                kfreepage((void *)PTE2PA(*pte));
+            *pte = 0;
+        } else {
+            debugf("free unmapped address %p", va);
+        }
+    }
+    sfence_vma();
+}
+
 void mm_free_pages(struct mm *mm) {
     assert(holding(&mm->lock));
 
@@ -151,24 +169,6 @@ void mm_free(struct mm *mm) {
     if (oldref == 1) {
         kfree(&mm_allocator, mm);
     }
-}
-
-void freevma(struct vma *vma, int free_phy_page) {
-    assert(holding(&vma->owner->lock));
-    assert(PGALIGNED(vma->vm_start) && PGALIGNED(vma->vm_end));
-
-    struct mm *mm = vma->owner;
-    for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
-        pte_t *pte = walk(mm, va, false);
-        if ((*pte & PTE_V)) {
-            if (free_phy_page)
-                kfreepage((void *)PTE2PA(*pte));
-            *pte = 0;
-        } else {
-            warnf("free unmapped address %p", va);
-        }
-    }
-    sfence_vma();
 }
 
 static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma *exclude) {
@@ -379,7 +379,10 @@ int mm_copy(struct mm *old, struct mm *new) {
         new_vma->vm_end     = vma->vm_end;
         new_vma->pte_flags  = vma->pte_flags;
         if (mm_mappages(new_vma)) {
-            warnf("mm_mappages");
+            warnf("mm_mappages failed");
+            // when failed, new_vma is not inserted into mm->vma list.
+            //  free it by hand.
+            freevma(new_vma, true);
             goto err;
         }
         for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
@@ -394,4 +397,17 @@ int mm_copy(struct mm *old, struct mm *new) {
 err:
     mm_free_pages(new);
     return -1;
+}
+
+struct vma* mm_find_vma(struct mm* mm, uint64 va) {
+    assert(holding(&mm->lock));
+
+    struct vma* vma = mm->vma;
+    while (vma) {
+        if (va == vma->vm_start) {
+            return vma;
+        }
+        vma = vma->next;
+    }
+    return NULL;
 }

@@ -58,7 +58,6 @@ struct proc {
 
     int index;
     struct mm *mm;
-    struct vma *vma_ustack;             // special vma for user stack, included in mm->vma list.
     struct vma *vma_brk;                // special vma for heap, included in mm->vma list.
     struct trapframe *__kva trapframe;  // data page for trampoline.S
     uint64 __kva kstack;                // Virtual address of kernel stack

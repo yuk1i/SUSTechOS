@@ -103,13 +103,13 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     mm_mappages(p->vma_brk);
 
     // setup stack
-    p->vma_ustack            = mm_create_vma(p->mm);
-    p->vma_ustack->vm_start  = USTACK_START - USTACK_SIZE;
-    p->vma_ustack->vm_end    = USTACK_START;
-    p->vma_ustack->pte_flags = PTE_R | PTE_W | PTE_U;
-    mm_mappages(p->vma_ustack);
+    struct vma *vma_ustack   = mm_create_vma(p->mm);
+    vma_ustack->vm_start  = USTACK_START - USTACK_SIZE;
+    vma_ustack->vm_end    = USTACK_START;
+    vma_ustack->pte_flags = PTE_R | PTE_W | PTE_U;
+    mm_mappages(vma_ustack);
 
-    for (uint64 va = p->vma_ustack->vm_start; va < p->vma_ustack->vm_end; va += PGSIZE) {
+    for (uint64 va = vma_ustack->vm_start; va < vma_ustack->vm_end; va += PGSIZE) {
         void *__kva pa = (void *)PA_TO_KVA(walkaddr(p->mm, va));
         memset(pa, 0, PGSIZE);
     }
@@ -138,7 +138,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         *(uint64 *)kva = uargv[i];
     }
     uint64 uargv_ptr = sp;
-    sp = sp & ~15;      // aligned to 16 bytes
+    sp               = sp & ~15;  // aligned to 16 bytes
     assert(IS_ALIGNED(sp, 16));
 
     // setup trapframe
@@ -155,7 +155,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
 }
 
 #define INIT_PROC "init"
-extern struct proc *init_proc; // defined in proc.c
+extern struct proc *init_proc;  // defined in proc.c
 
 // load all apps and init the corresponding `proc` structure.
 int load_init_app() {
@@ -170,7 +170,7 @@ int load_init_app() {
     }
     infof("load init proc %s", INIT_PROC);
 
-	char *argv[] = {NULL};
+    char *argv[] = {NULL};
     if (load_user_elf(app, p, argv) < 0) {
         panic("fail to load init elf.");
     }

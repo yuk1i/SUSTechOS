@@ -113,7 +113,6 @@ found:
     // ==== Resources Allocation Ends ====
 
     // loader will initialize these:
-    p->vma_ustack = NULL;
     p->vma_brk    = NULL;
 
     // prepare trapframe and the first return context.
@@ -143,6 +142,7 @@ err_free_proc:
 
 static void freeproc(struct proc *p) {
     assert(holding(&p->lock));
+    assert(!holding(&p->mm->lock));
 
     p->state      = UNUSED;
     p->pid        = -1;
@@ -157,7 +157,6 @@ static void freeproc(struct proc *p) {
     kfreepage((void *)KVA_TO_PA(p->trapframe));
     p->mm         = NULL;
     p->vma_brk    = NULL;
-    p->vma_ustack = NULL;
 }
 
 void sleep(void *chan, spinlock_t *lk) {
@@ -206,6 +205,8 @@ int fork() {
         return -1;
     }
 
+    assert(holding(&np->lock));
+
     struct proc *p = curr_proc();
     acquire(&p->lock);
     acquire(&p->mm->lock);
@@ -214,6 +215,8 @@ int fork() {
     // Copy user memory from parent to child.
     if (mm_copy(p->mm, np->mm))
         goto err_free;
+    // Set np's vma_brk
+    np->vma_brk = mm_find_vma(np->mm, p->vma_brk->vm_start);
 
     release(&p->mm->lock);
     release(&np->mm->lock);
@@ -232,6 +235,10 @@ int fork() {
     return np->pid;
 
 err_free:
+    release(&np->mm->lock);
+    release(&p->mm->lock);
+    release(&p->lock);
+
     freeproc(np);
     release(&np->lock);
     return -1;
@@ -321,6 +328,7 @@ void exit(int code) {
 
     // wakeup wait-ing parent.
     //  There is no race because locking against "wait_lock"
+    assert(p->parent != p);
     wakeup(p->parent);
 
     acquire(&p->lock);
@@ -343,12 +351,4 @@ void exit(int code) {
 
     sched();
     panic("exit should never return");
-}
-
-// Grow or shrink user memory by n bytes.
-// Return 0 on succness, -1 on failure.
-int growproc(int n) {
-    uint64 program_brk;
-    panic("qwq");
-    return 0;
 }
