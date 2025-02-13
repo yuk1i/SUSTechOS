@@ -9,7 +9,7 @@ _entry_secondary_cpu:
     # RISC-V SBI Spec: Ch.9 Hart State Management Extension
     #    sbi_hart_start: a0: hartid, a1: opaque
     fence.i
-    la sp, boot_stack_top
+    lla sp, boot_stack_top
     call secondarycpu_entry
 
 
