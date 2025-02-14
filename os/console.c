@@ -1,8 +1,8 @@
 #include "console.h"
 
+#include "debug.h"
 #include "defs.h"
 #include "sbi.h"
-#include "debug.h"
 
 static int uart_inited = false;
 static void uart_putchar(int);
@@ -167,10 +167,20 @@ int64 user_console_write(uint64 __user buf, int64 len) {
 
     // we only sync on user's write.
     acquire(&uart_tx_lock);
+
+    extern uint64 kernelprint_lock;
+    while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
+    __sync_synchronize();
+
     for (int64 i = 0; i < len; i++) {
         uart_putchar(kbuf[i]);
     }
+
+    __sync_synchronize();
+    __sync_lock_release(&kernelprint_lock);
+
     release(&uart_tx_lock);
+
     return len;
 }
 

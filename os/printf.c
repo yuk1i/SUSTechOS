@@ -8,7 +8,7 @@
 static char digits[] = "0123456789abcdef";
 extern volatile int panicked;
 
-static uint64 print_lock = 0;
+uint64 kernelprint_lock = 0;
 
 static void printint(int xx, int base, int sign) {
     char buf[16];
@@ -47,9 +47,9 @@ static void vprintf(char *fmt, va_list ap) {
     if (fmt == 0)
         panic("null fmt");
 
-    // we use a simple local lock, to avoid accidentally open the intr by pop_off.
+    // we use a simple local lock, to ensure printf is available before struct cpu init.
     int intr = intr_off();
-    while (__sync_lock_test_and_set(&print_lock, 1) != 0);
+    while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
     __sync_synchronize();
 
     for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
@@ -90,7 +90,7 @@ static void vprintf(char *fmt, va_list ap) {
     }
 
     __sync_synchronize();
-    __sync_lock_release(&print_lock);
+    __sync_lock_release(&kernelprint_lock);
     if (intr)
         intr_on();
 }
