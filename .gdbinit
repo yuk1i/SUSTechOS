@@ -1,5 +1,5 @@
 set confirm off
-source /data/os-riscv/gef/gef.py
+source scripts/gef.py
 set architecture riscv:rv64
 file build/kernel
 add-symbol-file build/kernel -o -0xffffffff00000000
