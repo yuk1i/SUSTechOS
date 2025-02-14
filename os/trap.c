@@ -127,7 +127,6 @@ void usertrap() {
                       trapframe->epc);
                 uint64 addr     = r_stval();
                 pagetable_t pgt = curr_proc()->mm->pgt;
-                // vm_print(pgt);
                 pte_t *pte = walk(curr_proc()->mm, addr, 0);
                 if (pte != NULL && (*pte & PTE_V)) {
                     *pte |= PTE_A;

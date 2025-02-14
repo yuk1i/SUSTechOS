@@ -87,7 +87,6 @@ int fork();
 int exec(char *name, char* arg[]);
 int wait(int, int *);
 void exit(int);
-int growproc(int n);
 
 void sleep(void *chan, spinlock_t *lk);
 void wakeup(void *chan);

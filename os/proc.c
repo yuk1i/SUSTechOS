@@ -85,15 +85,15 @@ struct proc *allocproc() {
 found:
     // initialize a proc
     tracef("init proc %p", p);
-    p->parent    = NULL;
-    p->exit_code = 0;
+    p->parent     = NULL;
+    p->exit_code  = 0;
     p->sleep_chan = NULL;
 
     // ==== Resources Allocation ====
 
-    p->pid       = allocpid();
-    p->state     = USED;
-    p->mm        = mm_create();
+    p->pid   = allocpid();
+    p->state = USED;
+    p->mm    = mm_create();
     if (!p->mm)
         goto err_free_proc;
 
@@ -113,7 +113,7 @@ found:
     // ==== Resources Allocation Ends ====
 
     // loader will initialize these:
-    p->vma_brk    = NULL;
+    p->vma_brk = NULL;
 
     // prepare trapframe and the first return context.
     p->trapframe = (struct trapframe *)PA_TO_KVA(tf);
@@ -126,7 +126,7 @@ found:
     assert(holding(&p->lock));
 
     return p;
-    
+
     // Resources clean up.
 err_free_tf:
     kfreepage((void *)tf);
@@ -155,8 +155,8 @@ static void freeproc(struct proc *p) {
     mm_free(p->mm);
 
     kfreepage((void *)KVA_TO_PA(p->trapframe));
-    p->mm         = NULL;
-    p->vma_brk    = NULL;
+    p->mm      = NULL;
+    p->vma_brk = NULL;
 }
 
 void sleep(void *chan, spinlock_t *lk) {
@@ -326,23 +326,29 @@ void exit(int code) {
 
     acquire(&wait_lock);
 
+    int wakeinit = 0;
+
+    // reparent:
+    for (int i = 0; i < NPROC; i++) {
+        struct proc *child = pool[i];
+        if (child == p)
+            continue;
+        acquire(&child->lock);
+        if (child->parent == p){
+            child->parent = init_proc;
+            wakeinit = 1;
+            // if child has dead, wake up init to do clean up.
+        }
+        release(&child->lock);
+    }
+    if (wakeinit)
+        wakeup(init_proc);
+
     // wakeup wait-ing parent.
     //  There is no race because locking against "wait_lock"
-    assert(p->parent != p);
     wakeup(p->parent);
 
     acquire(&p->lock);
-
-    // reparent
-    for (int i = 0; i < NPROC; i++) {
-        struct proc *np = pool[i];
-        if (np == p)
-            continue;
-        acquire(&np->lock);
-        if (np->parent == p)
-            np->parent = init_proc;
-        release(&np->lock);
-    }
 
     p->exit_code = code;
     p->state     = ZOMBIE;
