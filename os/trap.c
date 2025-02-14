@@ -126,8 +126,13 @@ void usertrap() {
                       r_stval(),
                       trapframe->epc);
                 uint64 addr     = r_stval();
-                pagetable_t pgt = curr_proc()->mm->pgt;
-                pte_t *pte = walk(curr_proc()->mm, addr, 0);
+                struct proc* p = curr_proc();
+                acquire(&p->lock);
+                struct mm *mm = p->mm;
+                acquire(&mm->lock);
+                release(&p->lock);
+                pte_t *pte = walk(mm, addr, 0);
+                release(&mm->lock);
                 if (pte != NULL && (*pte & PTE_V)) {
                     *pte |= PTE_A;
                     if (cause == StorePageFault)
