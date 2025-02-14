@@ -50,6 +50,11 @@ extern void shutdown() __attribute__((noreturn));
 
 #endif  // LOG_LEVEL_TRACE
 
+static inline int __safe_pid() {
+    struct proc *p = curr_proc();
+    return p ? p->pid : -1;
+}
+
 enum LOG_COLOR {
     RED = 31,
     GREEN = 32,
@@ -60,10 +65,11 @@ enum LOG_COLOR {
 
 #if defined(USE_LOG_ERROR)
 #define errorf(fmt, ...)                                                                    do {                                               \
-        printf("\x1b[%dm[%s %d] %s: " fmt "\x1b[0m\n", \
+        printf("\x1b[%dm[%s %d,%d] %s: " fmt "\x1b[0m\n", \
                RED,                                 \
                "ERROR",                                 \
                cpuid(),                                \
+               __safe_pid(),                           \
                __func__,                               \
                ##__VA_ARGS__);                         \
     } while (0)
@@ -74,10 +80,11 @@ enum LOG_COLOR {
 #if defined(USE_LOG_WARN)
 #define warnf(fmt, ...)                                \
     do {                                               \
-        printf("\x1b[%dm[%s %d] %s: " fmt "\x1b[0m\n", \
+        printf("\x1b[%dm[%s %d,%d] %s: " fmt "\x1b[0m\n", \
                YELLOW,                                 \
-               "WARN",                                 \
+               "WARN ",                                 \
                cpuid(),                                \
+               __safe_pid(),                           \
                __func__,                               \
                ##__VA_ARGS__);                         \
     } while (0)
@@ -88,10 +95,11 @@ enum LOG_COLOR {
 #if defined(USE_LOG_INFO)
 #define infof(fmt, ...)                                \
     do {                                               \
-        printf("\x1b[%dm[%s %d] %s: " fmt "\x1b[0m\n", \
+        printf("\x1b[%dm[%s %d,%d] %s: " fmt "\x1b[0m\n", \
                BLUE,                                   \
-               "INFO",                                 \
+               "INFO ",                                 \
                cpuid(),                                \
+               __safe_pid(),                           \
                __func__,                               \
                ##__VA_ARGS__);                         \
     } while (0)
@@ -102,10 +110,11 @@ enum LOG_COLOR {
 #if defined(USE_LOG_DEBUG)
 #define debugf(fmt, ...)                               \
     do {                                               \
-        printf("\x1b[%dm[%s %d] %s: " fmt "\x1b[0m\n", \
+        printf("\x1b[%dm[%s %d,%d] %s: " fmt "\x1b[0m\n", \
                GREEN,                                  \
                "DEBUG",                                \
                cpuid(),                                \
+               __safe_pid(),                           \
                __func__,                               \
                ##__VA_ARGS__);                         \
     } while (0)
@@ -116,7 +125,7 @@ enum LOG_COLOR {
 #if defined(USE_LOG_TRACE)
 #define tracef(fmt, ...)                                                                  \
     do {                                                                                  \
-        printf("\x1b[%dm[%s %d]" fmt "\x1b[0m\n", GRAY, "TRACE", cpuid(), ##__VA_ARGS__); \
+        printf("\x1b[%dm[%s %d,%d]" fmt "\x1b[0m\n", GRAY, "TRACE", cpuid(),__safe_pid(), ##__VA_ARGS__); \
     } while (0)
 #else
 #define tracef(fmt, ...) dummy(0, ##__VA_ARGS__)
@@ -124,10 +133,11 @@ enum LOG_COLOR {
 
 #define panic(fmt, ...)                                    \
     do {                                                   \
-        __panic("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", \
+        __panic("\x1b[%dm[%s %d,%d] %s:%d: " fmt "\x1b[0m\n", \
                 RED,                                       \
                 "PANIC",                                   \
                 cpuid(),                                   \
+                __safe_pid(),                              \
                 __FILE__,                                  \
                 __LINE__,                                  \
                 ##__VA_ARGS__);                            \
