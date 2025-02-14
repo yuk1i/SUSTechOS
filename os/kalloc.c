@@ -41,21 +41,19 @@ void kpgmgrinit() {
 void kfreepage(void *__pa pa) {
     struct linklist *l;
 
-    acquire(&kpagelock);
-
     uint64 __kva kvaddr = PA_TO_KVA(pa);
     if (!PGALIGNED((uint64)pa) || !(kpage_allocator_base <= kvaddr && kvaddr < kpage_allocator_base + kpage_allocator_size))
         panic("invalid page %p", pa);
-    // Fill with junk to catch dangling refs.
+    memset((void *)kvaddr, 0xdd, PGSIZE);
+
     if (kalloc_inited)
         debugf("free: %p", pa);
-    memset((void *)kvaddr, 0xdd, PGSIZE);
+
+    acquire(&kpagelock);
     l             = (struct linklist *)kvaddr;
     l->next       = kmem.freelist;
     kmem.freelist = l;
-
     freepages_count++;
-
     release(&kpagelock);
 }
 
@@ -71,12 +69,14 @@ void *__pa kallocpage() {
     if (l) {
         kmem.freelist = l->next;
         freepages_count--;
-        memset((char *)l, 0xaf, PGSIZE);  // fill with junk
     }
-    debugf("alloc: %p, by %p", l, ra);
     release(&kpagelock);
+    
+    debugf("alloc: %p, by %p", l, ra);
 
-    if (l == 0) {
+    if (l != NULL) {
+        memset((char *)l, 0xaf, PGSIZE);  // fill with junk
+    } else {
         warnf("out of memory, called by %p", ra);
         return 0;
     }
