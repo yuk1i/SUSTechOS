@@ -2,11 +2,14 @@
 
 #include "console.h"
 #include "debug.h"
+#include "defs.h"
 #include "loader.h"
 #include "plic.h"
 #include "syscall.h"
 #include "timer.h"
-#include "defs.h"
+
+static int64 kp_print_lock = 0;
+extern volatile int panicked;
 
 void plic_handle() {
     int irq = plic_claim();
@@ -25,41 +28,60 @@ void kernel_trap(struct ktrapframe *ktf) {
     if ((r_sstatus() & SSTATUS_SPP) == 0)
         panic("kerneltrap: not from supervisor mode");
 
-    if (mycpu()->inkernel_trap) {
-        // Prevent nested kernel trap, including nested interrupt, and exception during kernel_trap (called `Double Fault` in x86)
-        print_sysregs(true);
-        print_ktrapframe(ktf);
-        panic("nested kerneltrap");
-    }
-    mycpu()->inkernel_trap = 1;
+    mycpu()->inkernel_trap++;
 
     uint64 cause          = r_scause();
     uint64 exception_code = cause & SCAUSE_EXCEPTION_CODE_MASK;
     if (cause & SCAUSE_INTERRUPT) {
+        // correctness checking:
+        if (mycpu()->inkernel_trap > 1) {
+            // should never have nested interrupt
+            print_sysregs(true);
+            print_ktrapframe(ktf);
+            panic("nested kerneltrap");
+        }
+        if (panicked) {
+            panic("other CPU has panicked");
+        }
+        // handle interrupt
         switch (exception_code) {
             case SupervisorTimer:
-                tracef("kernel timer interrupt, cycle: %d", r_time());
+                tracef("s-timer interrupt, cycle: %d", r_time());
                 set_next_timer();
                 // we never preempt kernel threads.
-                goto free;
+                break;
             case SupervisorExternal:
-                tracef("s-external interrupt from kerneltrap!");
+                tracef("s-external interrupt.");
                 plic_handle();
-                goto free;
+                break;
             default:
-                panic("kerneltrap entered with unhandled interrupt. %p", cause);
+                errorf("unhandled interrupt: %d", cause);
+                goto kernel_panic;
         }
+    } else {
+        // kernel exception, unexpected.
+        goto kernel_panic;
     }
 
+    assert(!intr_get());
+    assert(mycpu()->inkernel_trap == 1);
+
+    mycpu()->inkernel_trap--;
+
+    return;
+
+kernel_panic:
+    // lock against other cpu, to show a complete panic message.
+
+    while (__sync_lock_test_and_set(&kp_print_lock, 1) != 0);
+
+    errorf("=========== Kernel Panic ===========");
     print_sysregs(true);
     print_ktrapframe(ktf);
 
-    panic("trap from kernel");
+    __sync_lock_release(&kp_print_lock);
 
-free:
-    assert(!intr_get());
-    mycpu()->inkernel_trap = 0;
-    return;
+    panic("kernel panic");
 }
 
 void set_kerneltrap() {
@@ -122,11 +144,9 @@ void usertrap() {
             case LoadPageFault:
             case StorePageFault:
             case InstructionPageFault: {
-                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.",
-                      r_stval(),
-                      trapframe->epc);
-                uint64 addr     = r_stval();
-                struct proc* p = curr_proc();
+                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), trapframe->epc);
+                uint64 addr    = r_stval();
+                struct proc *p = curr_proc();
                 acquire(&p->lock);
                 struct mm *mm = p->mm;
                 acquire(&mm->lock);

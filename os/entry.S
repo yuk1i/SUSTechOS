@@ -59,7 +59,7 @@ kernel_trap_entry:
     ld x1, 0x08(sp)
     ld x2, 0x10(sp)
     ld x3, 0x18(sp)
-    ld x4, 0x20(sp)
+    // do not recover tp(x4), in case we have moved CPUs: ld x4, 0x20(sp)
     ld x5, 0x28(sp)
     ld x6, 0x30(sp)
     ld x7, 0x38(sp)

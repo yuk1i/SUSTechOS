@@ -59,6 +59,8 @@ enum LOG_COLOR {
     RED = 31,
     GREEN = 32,
     BLUE = 34,
+    PURPLE = 35,
+    CYAN = 36,
     GRAY = 90,
     YELLOW = 93,
 };
@@ -130,6 +132,19 @@ enum LOG_COLOR {
 #else
 #define tracef(fmt, ...) dummy(0, ##__VA_ARGS__)
 #endif  // USE_LOG_TRACE
+
+// User-defined log color
+
+#define logf(color, text, fmt, ...)                           \
+    do {                                               \
+        printf("\x1b[%dm[%s %d,%d] %s: " fmt "\x1b[0m\n", \
+               color,                                  \
+               text,                                \
+               cpuid(),                                \
+               __safe_pid(),                           \
+               __func__,                               \
+               ##__VA_ARGS__);                         \
+    } while (0)
 
 #define panic(fmt, ...)                                    \
     do {                                                   \
