@@ -106,6 +106,8 @@ void printf(char *fmt, ...) {
 __noreturn void __panic(char *fmt, ...) {
     va_list ap;
 
+    intr_off();
+
     panicked = 1;
     va_start(ap, fmt);
     vprintf(fmt, ap);
