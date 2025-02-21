@@ -13,7 +13,7 @@ extern volatile int panicked;
 
 void plic_handle() {
     int irq = plic_claim();
-    if (irq == UART0_IRQ) {
+    if (irq == uart0_irq) {
         uart_intr();
         // printf("intr %d: UART0\n", r_tp());
     }
@@ -72,6 +72,7 @@ void kernel_trap(struct ktrapframe *ktf) {
 
 kernel_panic:
     // lock against other cpu, to show a complete panic message.
+    panicked = 1;
 
     while (__sync_lock_test_and_set(&kp_print_lock, 1) != 0);
 
@@ -144,7 +145,6 @@ void usertrap() {
             case LoadPageFault:
             case StorePageFault:
             case InstructionPageFault: {
-                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), trapframe->epc);
                 uint64 addr    = r_stval();
                 struct proc *p = curr_proc();
                 acquire(&p->lock);
@@ -159,6 +159,9 @@ void usertrap() {
                         *pte |= PTE_D;
                     sfence_vma();
                     break;
+                } else {
+                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), trapframe->epc);
+                    exit(-2);
                 }
             }
             case StoreMisaligned:

@@ -2,6 +2,7 @@
 #include "types.h"
 #include "riscv.h"
 
+// Legacy:
 const uint64 SBI_SET_TIMER = 0;
 const uint64 SBI_CONSOLE_PUTCHAR = 1;
 const uint64 SBI_CONSOLE_GETCHAR = 2;
@@ -12,7 +13,9 @@ const uint64 SBI_REMOTE_SFENCE_VMA = 6;
 const uint64 SBI_REMOTE_SFENCE_VMA_ASID = 7;
 const uint64 SBI_SHUTDOWN = 8;
 
-const uint64 SBI_HSM = 0x48534D;
+// SBI Extension: Specify EID and FID.
+const uint64 SBI_EID_BASE = 0x10;
+const uint64 SBI_EID_HSM = 0x48534D;
 
 static int inline sbi_call_legacy(uint64 which, uint64 arg0, uint64 arg1, uint64 arg2)
 {
@@ -44,8 +47,18 @@ void sbi_putchar(int c)
 
 int sbi_hsm_hart_start(unsigned long hartid, unsigned long start_addr, unsigned long a1)
 {
-	struct sbiret ret = sbi_call(SBI_HSM, 0x0, hartid, start_addr, a1);
+	struct sbiret ret = sbi_call(SBI_EID_HSM, 0x0, hartid, start_addr, a1);
 	return ret.error;
+}
+
+uint64 sbi_get_mvendorid(void) {
+	struct sbiret ret = sbi_call(SBI_EID_BASE, 0x04, 0, 0, 0);
+	return ret.value;
+}
+
+uint64 sbi_get_mimpid(void) {
+	struct sbiret ret = sbi_call(SBI_EID_BASE, 0x06, 0, 0, 0);
+	return ret.value;
 }
 
 void shutdown()

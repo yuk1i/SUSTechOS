@@ -2,8 +2,10 @@
 
 #include "debug.h"
 #include "defs.h"
+#include "riscv-io.h"
 #include "sbi.h"
 
+int uart0_irq;
 static int uart_inited = false;
 static void uart_putchar(int);
 
@@ -32,21 +34,52 @@ void consputc(int c) {
             uart_putchar('\b');
             uart_putchar(' ');
             uart_putchar('\b');
+        } else if (c == '\n') {
+            uart_putchar('\r');
+            uart_putchar('\n');
         } else {
             uart_putchar(c);
         }
     }
 }
 
+// riscv-io.h
+
+extern int on_vf2_board;
+static void set_reg(uint32 reg, uint32 val) {
+    if (on_vf2_board) {
+        reg = reg << 2;
+        writel(val, Reg(reg));
+    } else {
+        writeb(val, Reg(reg));
+    }
+}
+
+static uint32 read_reg(uint32 reg) {
+    if (on_vf2_board) {
+        reg = reg << 2;
+        return readl(Reg(reg));
+    } else {
+        return readb(Reg(reg));
+    }
+}
+
 static void uart_putchar(int ch) {
     int intr = intr_off();
-    while ((ReadReg(LSR) & LSR_TX_IDLE) == 0) MEMORY_FENCE();
-    MEMORY_FENCE();
+    while ((read_reg(LSR) & LSR_TX_IDLE) == 0);
 
-    WriteReg(THR, ch);
-    MEMORY_FENCE();
+    set_reg(THR, ch);
     if (intr)
         intr_on();
+}
+
+static int uartgetc(void) {
+    if (read_reg(LSR) & 0x01) {
+        // input data is ready.
+        return read_reg(RHR);
+    } else {
+        return -1;
+    }
 }
 
 void console_init() {
@@ -54,34 +87,23 @@ void console_init() {
     spinlock_init(&uart_tx_lock, "uart_tx");
     spinlock_init(&cons.lock, "cons");
 
+    // no need to init uart8250, they are already inited by OpenSBI.
+
+    // however, setup interrupt number for UART0.
+    if (on_vf2_board) {
+        uart0_irq = VF2_UART0_IRQ;
+    } else {
+        uart0_irq = QEMU_UART0_IRQ;
+    }
+
     // disable interrupts.
-    WriteReg(IER, 0x00);
-    MEMORY_FENCE();
-
-    // special mode to set baud rate.
-    WriteReg(LCR, LCR_BAUD_LATCH);
-    MEMORY_FENCE();
-
-    // LSB for baud rate of 38.4K.
-    WriteReg(0, 0x03);
-    MEMORY_FENCE();
-
-    // MSB for baud rate of 38.4K.
-    WriteReg(1, 0x00);
-    MEMORY_FENCE();
-    // leave set-baud mode,
-
-    // and set word length to 8 bits, no parity.
-    WriteReg(LCR, LCR_EIGHT_BITS);
-    MEMORY_FENCE();
+    set_reg(IER, 0x00);
 
     // reset and enable FIFOs.
-    WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
-    MEMORY_FENCE();
+    set_reg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
     // enable receive interrupts.
-    WriteReg(IER, IER_RX_ENABLE);
-    MEMORY_FENCE();
+    set_reg(IER, IER_RX_ENABLE | IER_TX_ENABLE);
     uart_inited = true;
 }
 
@@ -130,15 +152,6 @@ static void consintr(int c) {
     release(&cons.lock);
 }
 
-static int uartgetc(void) {
-    if (ReadReg(LSR) & 0x01) {
-        // input data is ready.
-        return ReadReg(RHR);
-    } else {
-        return -1;
-    }
-}
-
 void uart_intr() {
     while (1) {
         int c = uartgetc();
@@ -173,7 +186,7 @@ int64 user_console_write(uint64 __user buf, int64 len) {
     __sync_synchronize();
 
     for (int64 i = 0; i < len; i++) {
-        uart_putchar(kbuf[i]);
+        consputc(kbuf[i]);
     }
 
     __sync_synchronize();

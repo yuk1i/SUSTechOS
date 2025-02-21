@@ -1,9 +1,9 @@
 #include <stdarg.h>
 
 #include "console.h"
+#include "defs.h"
 #include "lock.h"
 #include "log.h"
-#include "defs.h"
 
 static char digits[] = "0123456789abcdef";
 extern volatile int panicked;
@@ -35,8 +35,7 @@ static void printptr(uint64 x) {
     int i;
     consputc('0');
     consputc('x');
-    for (i = 0; i < (sizeof(uint64) * 2); i++, x <<= 4)
-        consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
+    for (i = 0; i < (sizeof(uint64) * 2); i++, x <<= 4) consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
 // Print to the console. only understands %d, %x, %p, %s.
@@ -48,9 +47,12 @@ static void vprintf(char *fmt, va_list ap) {
         panic("null fmt");
 
     // we use a simple local lock, to ensure printf is available before struct cpu init.
-    int intr = intr_off();
-    while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
-    __sync_synchronize();
+    int intr     = intr_off();
+    int panicked = panicked;
+    if (!panicked) {
+        while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
+        __sync_synchronize();
+    }
 
     for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
         if (c != '%') {
@@ -89,8 +91,10 @@ static void vprintf(char *fmt, va_list ap) {
         }
     }
 
-    __sync_synchronize();
-    __sync_lock_release(&kernelprint_lock);
+    if (!panicked) {
+        __sync_synchronize();
+        __sync_lock_release(&kernelprint_lock);
+    }
     if (intr)
         intr_on();
 }
@@ -113,7 +117,7 @@ __noreturn void __panic(char *fmt, ...) {
     vprintf(fmt, ap);
     va_end(ap);
 
-    while (1) asm volatile("nop":::"memory");
-	
-	__builtin_unreachable();
+    while (1) asm volatile("nop" ::: "memory");
+
+    __builtin_unreachable();
 }

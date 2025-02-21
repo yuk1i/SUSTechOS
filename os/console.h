@@ -11,7 +11,10 @@ void console_init();
 int64 user_console_write(uint64 __user buf, int64 len);
 int64 user_console_read(uint64 __user buf, int64 n);
 
-#define UART0_IRQ  10
+#define QEMU_UART0_IRQ  10
+#define VF2_UART0_IRQ   32
+
+extern int uart0_irq;
 
 // the UART control registers are memory-mapped
 // at address UART0. this macro returns the

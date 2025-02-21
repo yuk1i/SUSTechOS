@@ -26,6 +26,7 @@ static void secondarycpu_init();
 
 static volatile int booted_count       = 0;
 static volatile int halt_specific_init = 0;
+int on_vf2_board = 0;
 
 allocator_t kstrbuf;
 
@@ -83,6 +84,15 @@ allocator_t kstrbuf;
 void bootcpu_entry(int mhartid) {
     printf("\n\n=====\nHello World!\n=====\n\nBoot stack: %p\nclean bss: %p - %p\n", boot_stack, s_bss, e_bss);
     memset(s_bss, 0, e_bss - s_bss);
+
+    uint64 vendor = sbi_get_mvendorid();
+    uint64 impl = sbi_get_mimpid();
+    if (vendor == 0x489 && impl == 0x4210427) {
+        printf("=== Boot: Detect SiFive U74, Possible running on VisionFive 2 board ===\n");
+        printf("Assume s-mode U-boot exists. mhardid is stored in tp.\n");
+        on_vf2_board = 1;
+        mhartid = r_tp();
+    }
 
     printf("Boot m_hartid %d\n", mhartid);
 
@@ -162,15 +172,21 @@ static void bootcpu_init() {
     // We assume NCPU == the number of cpus in the system, although spec does not guarantee this.
     {
         int cpuid = 1;
-        for (int hartid = 0; hartid < NCPU; hartid++) {
+        int max_hartid = NCPU;
+        if (on_vf2_board) 
+            max_hartid++;
+
+        for (int hartid = 0; hartid < max_hartid; hartid++) {
             if (hartid == mycpu()->mhart_id)
                 continue;
+            if (on_vf2_board && hartid == 0)
+                continue;   // skip for hart 0 for vf2 (jh7110), it's a S7 core instead of U74.
 
             int saved_booted_cnt = booted_count;
 
             printf("- booting hart %d: hsm_hart_start(hartid=%d, pc=_entry_sec, opaque=%d)", hartid, hartid, cpuid);
             int ret = sbi_hsm_hart_start(hartid, KIVA_TO_PA(_entry_secondary_cpu), cpuid);
-            printf(" = %d. waiting for hart online\n", ret);
+            printf(" = %d.\n", ret);
             if (ret < 0) {
                 printf("skipped for hart %d\n", hartid);
                 continue;
