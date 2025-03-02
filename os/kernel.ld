@@ -30,7 +30,6 @@ SECTIONS
     .data : {
         *(.data.apps)
         *(.data .data.*)
-        *(.sdata .sdata.*)
     }
 
     . = ALIGN(4K);
@@ -39,7 +38,6 @@ SECTIONS
         *(.bss.stack)
         s_bss = .;
         *(.bss .bss.*)
-        *(.sbss .sbss.*)
     }
 
     . = ALIGN(4K);

@@ -31,7 +31,7 @@ HEADER_DEP := $(addsuffix .d, $(basename $(C_OBJS)))
 CFLAGS := -no-pie -Wall -Wno-unused-variable -Werror -O2 -fno-omit-frame-pointer -ggdb -march=rv64g
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
-CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
+CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax -msmall-data-limit=0
 CFLAGS += -I$K
 CFLAGS += -std=gnu17
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
