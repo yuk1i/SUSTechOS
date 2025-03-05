@@ -103,7 +103,7 @@ void console_init() {
     set_reg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
     // enable receive interrupts.
-    set_reg(IER, IER_RX_ENABLE | IER_TX_ENABLE);
+    set_reg(IER, IER_RX_ENABLE);
     uart_inited = true;
 }
 
