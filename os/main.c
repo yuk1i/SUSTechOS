@@ -122,9 +122,10 @@ __noreturn static void bootcpu_relocating() {
     uint64 new_sp = mycpu()->sched_kstack_top;
     uint64 fn     = (uint64)&bootcpu_init;
 
-    asm volatile("mv a1, %0" ::"r"(fn));
-    asm volatile("mv sp, %0" ::"r"(new_sp));
-    asm volatile("jr a1");
+    asm volatile(
+        "mv a1, %0 \n \
+        mv sp, %1 \n \
+        jr a1" ::"r"(fn),"r"(new_sp));
     __builtin_unreachable();
 }
 
@@ -144,9 +145,10 @@ __noreturn void secondarycpu_entry(int hartid, int cpuid) {
     uint64 fn = (uint64)&secondarycpu_relocating + KERNEL_OFFSET;
     uint64 sp = (uint64)&boot_stack_top + KERNEL_OFFSET;
 
-    asm volatile("mv a1, %0\n" ::"r"(fn));
-    asm volatile("mv sp, %0\n" ::"r"(sp));
-    asm volatile("jr a1");
+    asm volatile(
+        "mv a1, %0 \n \
+        mv sp, %1 \n \
+        jr a1" ::"r"(fn),"r"(sp));
     __builtin_unreachable();
 }
 
@@ -156,9 +158,10 @@ __noreturn static void secondarycpu_relocating() {
     uint64 sp = mycpu()->sched_kstack_top;
     uint64 fn = (uint64)&secondarycpu_init;
 
-    asm volatile("mv a1, %0" ::"r"(fn));
-    asm volatile("mv sp, %0" ::"r"(sp));
-    asm volatile("jr a1");
+    asm volatile(
+        "mv a1, %0 \n \
+        mv sp, %1 \n \
+        jr a1" ::"r"(fn),"r"(sp));
     __builtin_unreachable();
 }
 
@@ -331,8 +334,10 @@ __noreturn static void bootcpu_start_relocation() {
     uint64 fn = (uint64)&bootcpu_relocating + KERNEL_OFFSET;
     uint64 sp = (uint64)&boot_stack_top + KERNEL_OFFSET;
 
-    asm volatile("mv a1, %0\n" ::"r"(fn));
-    asm volatile("mv sp, %0\n" ::"r"(sp));
-    asm volatile("jr a1");
+    asm volatile(
+        "mv a1, %0 \n \
+        mv sp, %1 \n \
+        jr a1" ::"r"(fn),"r"(sp));
+
     __builtin_unreachable();
 }
