@@ -70,6 +70,9 @@ int create_kthread(void (*fn)(uint64), uint64 arg) {
     if (!p)
         return -1;
 
+    // initialize process state
+    p->context.ra = (uint64)first_sched_ret;
+    p->context.sp = p->kstack + PGSIZE;
     p->context.s1 = (uint64)fn;
     p->context.s2 = arg;
     p->state = RUNNABLE;
@@ -109,8 +112,6 @@ found:
 
     memset(&p->context, 0, sizeof(p->context));
     memset((void *)p->kstack, 0, PGSIZE);
-    p->context.ra = (uint64)first_sched_ret;
-    p->context.sp = p->kstack + PGSIZE;
 
     if (!init_proc)
         init_proc = p;
