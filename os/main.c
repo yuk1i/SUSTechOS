@@ -33,22 +33,14 @@ allocator_t kstrbuf;
  * | Boot CPU |  cpuid = 0, m_hartid = random
  * ------------
  *      | OpenSBI
- * -------------------------
- * | _entry, bootcpu_entry |
- * -------------------------
+ * -------------------
+ * |      _entry     |
+ * -------------------
  *      | sp <= boot_stack (PA)
- * ----------------------------
- * | bootcpu_start_relocation |
- * ----------------------------
- *      | satp <= relocate_pagetable
- *      | sp   <= boot_stack (KIVA)
  * ----------------------
- * | bootcpu_relocating |
+ * | bootcpu_entry |
  * ----------------------
- *      | kvm_init : setup kernel_pagetable
- *      |
- *      | satp <= kernel_pagetable
- *      | sp   <= percpu_sched_stack (KVA)
+ *      | sp   <= percpu_kstack (PA)
  * ----------------
  * | bootcpu_init |
  * ----------------
@@ -59,13 +51,7 @@ allocator_t kstrbuf;
  *    |                                             ----------------------
  *    |                                             | secondarycpu_entry |
  *    |                                             ----------------------
- *    |                                                     | satp <= relocate_pagetable
- *    |                                                     | sp   <= boot_stack (KIVA)
- *    |                                             ---------------------------
- *    |                                             | secondarycpu_relocating |
- *    |                                             ---------------------------
- *    |                                                     | satp <= kernel_pagetable
- *    |                                                     | sp   <= percpu_sched_stack (KVA)
+ *    |                                                     | sp   <= percpu_kstack (PA)
  *    | wait for all cpu online                     ---------------------
  *    |                                             | secondarycpu_init |
  *    | platform level init :                       ---------------------
