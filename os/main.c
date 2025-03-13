@@ -19,8 +19,7 @@ __noreturn void secondarycpu_entry(int mhartid, int cpuid);
 
 static void bootcpu_init();
 static void secondarycpu_init();
-void init();
-static struct proc* initproc;
+void init(uint64);
 
 static volatile int booted_count       = 0;
 static volatile int halt_specific_init = 0;
@@ -172,9 +171,7 @@ static void bootcpu_init() {
     timer_init();
     plicinithart();
 
-    initproc = create_kthread((uint64)init, 0x1919810);
-    add_task(initproc);
-    release(&initproc->lock);
+    create_kthread(init, 0x1919810);
 
     MEMORY_FENCE();
     halt_specific_init = 1;
@@ -203,7 +200,7 @@ static void secondarycpu_init() {
 
 uint64 count = 0;
 
-void worker(int id) {
+void worker(uint64 id) {
     for (int i = 0; i < 1000000; i++) {
         count++;
         if (count % 100 == 0) {
@@ -214,15 +211,11 @@ void worker(int id) {
     exit(id + 114514);
 }
 #define NTHREAD 8
-void init() {
+void init(uint64) {
     infof("kthread: init starts!");
     int pids[NTHREAD];
     for (int i = 0; i < NTHREAD; i++) {
-        struct proc* p = create_kthread((uint64)worker, i);
-        p->parent      = initproc;
-        pids[i]        = p->pid;
-        add_task(p);
-        release(&p->lock);
+        pids[i]        = create_kthread(worker, i);
     }
     int retcode;
     for (int i = 0; i < NTHREAD; i++) {

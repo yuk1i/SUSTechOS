@@ -54,24 +54,32 @@ static int allocpid() {
 }
 static void first_sched_ret(void) {
     // s0: frame pointer, s1: fn, s2: uint64 arg
-    //  they are callee saved registers, so we do not need to save them.
+    void (*fn)(uint64);
+    uint64 arg;
+    asm volatile("mv %0, s1":"=r"(fn));
+    asm volatile("mv %0, s2":"=r"(arg));
+    
     release(&curr_proc()->lock);
     intr_on();
-    asm volatile("mv a0, s2");
-    asm volatile("jalr s1");
+    fn(arg);
     panic("first_sched_ret should never return. You should use exit to terminate kthread");
 }
 
-struct proc *create_kthread(uint64 fn, uint64 arg) {
+int create_kthread(void (*fn)(uint64), uint64 arg) {
     struct proc *p = allocproc();
     if (!p)
-        return NULL;
+        return -1;
 
-    p->context.s1 = fn;
+    p->context.s1 = (uint64)fn;
     p->context.s2 = arg;
     p->state = RUNNABLE;
+    p->parent = init_proc;
 
-    return p;
+    int pid = p->pid;
+    add_task(p);
+    release(&p->lock);
+
+    return pid;
 }
 
 // Look in the process table for an UNUSED proc.

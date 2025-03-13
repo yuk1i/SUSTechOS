@@ -84,7 +84,7 @@ static inline struct proc *curr_proc() {
 // proc.c
 void proc_init();
 struct proc *allocproc();
-struct proc *create_kthread(uint64 fn, uint64 arg);
+int create_kthread(void (*fn)(uint64), uint64 arg);
 int wait(int, int *);
 void exit(int);
 
