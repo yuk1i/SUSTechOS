@@ -105,7 +105,7 @@ found:
     if (!tf)
         goto err_free_mm;
 
-    if (mm_mappageat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W | PTE_X))
+    if (mm_mappageat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W))
         goto err_free_tf;
 
     release(&p->mm->lock);
@@ -186,6 +186,8 @@ void sleep(void *chan, spinlock_t *lk) {
     acquire(lk);
 }
 
+// Wake up all processes sleeping on chan.
+// Must be called without any p->lock.
 void wakeup(void *chan) {
     for (int i = 0; i < NPROC; i++) {
         struct proc *p = pool[i];
