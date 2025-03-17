@@ -38,6 +38,8 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         // we only load from PT_LOAD phdrs
         if (phdr->p_type != PT_LOAD)
             continue;
+        assert_str(PGALIGNED(phdr->p_vaddr), "Simplified loader only support page-aligned p_vaddr: %p", phdr->p_vaddr);
+        
         // resolve the permission of PTE for this phdr
         int pte_perm = PTE_U;
         if (phdr->p_flags & PF_R)

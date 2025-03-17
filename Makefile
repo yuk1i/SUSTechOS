@@ -95,6 +95,7 @@ build/kernel: user $(OBJS) os/kernel.ld
 
 clean:
 	rm -rf $(BUILDDIR) os/kernel_app.ld os/link_app.S
+	$(MAKE) -C user clean
 
 # BOARD
 BOARD		?= qemu
