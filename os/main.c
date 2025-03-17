@@ -172,7 +172,7 @@ static void bootcpu_init() {
     printf("Boot another cpus.\n");
 
     // Attention: OpenSBI does not guarantee the boot cpu has mhartid == 0.
-    // We assume NCPU == the number of cpus in the system, although spec does not guarantee this.
+    // We assume mhartid begins at 0, aka NCPU == the number of cpus in the system, although spec does not guarantee this.
     {
         int cpuid = 1;
         int max_hartid = NCPU;
