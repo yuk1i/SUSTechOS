@@ -28,7 +28,6 @@ SECTIONS
     e_rodata = .;
     s_data = .;
     .data : {
-        *(.data.apps)
         *(.data .data.*)
     }
 

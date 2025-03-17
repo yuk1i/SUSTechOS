@@ -88,6 +88,7 @@ build: build/kernel
 build/kernel: user $(OBJS) os/kernel.ld
 	$(LD) $(LDFLAGS) -T os/kernel.ld -o $(BUILDDIR)/kernel $(OBJS)
 	$(OBJCOPY) -O binary $(BUILDDIR)/kernel $(BUILDDIR)/kernel.bin
+	$(OBJCOPY) --strip-unneeded $(BUILDDIR)/kernel $(BUILDDIR)/kernel.stripped
 	$(OBJDUMP) -S $(BUILDDIR)/kernel > $(BUILDDIR)/kernel.asm
 	$(OBJDUMP) -t $(BUILDDIR)/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(BUILDDIR)/kernel.sym
 	@echo 'Build kernel done'
