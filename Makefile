@@ -85,7 +85,7 @@ $K/link_app.S: scripts/pack.py .FORCE
 
 build: build/kernel
 
-build/kernel: $(OBJS) os/kernel.ld
+build/kernel: user $(OBJS) os/kernel.ld
 	$(LD) $(LDFLAGS) -T os/kernel.ld -o $(BUILDDIR)/kernel $(OBJS)
 	$(OBJCOPY) -O binary $(BUILDDIR)/kernel $(BUILDDIR)/kernel.bin
 	$(OBJDUMP) -S $(BUILDDIR)/kernel > $(BUILDDIR)/kernel.asm
