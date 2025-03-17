@@ -69,22 +69,22 @@ static pagetable_t kvmmake() {
     // Step.1 : Kernel Image
     // map kernel text executable and read-only.
     // 0xffff_ffff_8020_0000 -> 0x8020_0000
-    kvmmap(kpgtbl, (uint64)s_text, KIVA_TO_PA(s_text), (uint64)e_text - (uint64)s_text, PTE_A | PTE_R | PTE_X | PTE_G);
+    kvmmap(kpgtbl, (uint64)s_text, KIVA_TO_PA(s_text), (uint64)e_text - (uint64)s_text, PTE_A | PTE_R | PTE_X);
 
     // map kernel ro_data: s_rodata to e_rodata
-    kvmmap(kpgtbl, (uint64)s_rodata, KIVA_TO_PA(s_rodata), (uint64)e_rodata - (uint64)s_rodata, PTE_A | PTE_R | PTE_G);
+    kvmmap(kpgtbl, (uint64)s_rodata, KIVA_TO_PA(s_rodata), (uint64)e_rodata - (uint64)s_rodata, PTE_A | PTE_R);
 
     // map kernel .s_data to .e_bss,
     uint64 kimage_data_size = KIVA_TO_PA(e_bss) - KIVA_TO_PA(s_data);
-    kvmmap(kpgtbl, (uint64)s_data, KIVA_TO_PA(s_data), kimage_data_size, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
+    kvmmap(kpgtbl, (uint64)s_data, KIVA_TO_PA(s_data), kimage_data_size, PTE_A | PTE_D | PTE_R | PTE_W);
 
     // Step.2 : Kernel Trampoline
     // map trampoline
     kvmmap(kpgtbl, (uint64)TRAMPOLINE, KIVA_TO_PA(trampoline), PGSIZE, PTE_A | PTE_R | PTE_X);
 
     // Step.3 : Kernel Device MMIO :
-    kvmmap(kpgtbl, KERNEL_PLIC_BASE, PLIC_PHYS, KERNEL_PLIC_SIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
-    kvmmap(kpgtbl, KERNEL_UART0_BASE, UART0_PHYS, KERNEL_UART0_SIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
+    kvmmap(kpgtbl, KERNEL_PLIC_BASE, PLIC_PHYS, KERNEL_PLIC_SIZE, PTE_A | PTE_D | PTE_R | PTE_W);
+    kvmmap(kpgtbl, KERNEL_UART0_BASE, UART0_PHYS, KERNEL_UART0_SIZE, PTE_A | PTE_D | PTE_R | PTE_W);
 
     // Step.4 : Kernel Scheduler stack:
     uint64 sched_stack = KERNEL_STACK_SCHED;
@@ -94,7 +94,7 @@ static pagetable_t kvmmake() {
         for (uint64 va = sched_stack; va < sched_stack + KERNEL_STACK_SIZE; va += PGSIZE) {
             uint64 __pa newpg = KVA_TO_PA(allockernelpage());
             debugf("map halt %d, va:%p, pa:%p", i, va, newpg);
-            kvmmap(kpgtbl, va, newpg, PGSIZE, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
+            kvmmap(kpgtbl, va, newpg, PGSIZE, PTE_A | PTE_D | PTE_R | PTE_W);
         }
         c->sched_kstack_top = sched_stack + KERNEL_STACK_SIZE;
         // double the sched_stack to make a significant gap between different cpus.
@@ -114,7 +114,7 @@ static pagetable_t kvmmake() {
     // map remaining pages to KERNEL_DIRECT_MAPPING_BASE + pa
     uint64 direct_mapping_vaddr = KERNEL_DIRECT_MAPPING_BASE + kernel_image_end_2M;
     uint64 direct_mapping_paddr = kernel_image_end_2M;
-    kvmmap(kpgtbl, direct_mapping_vaddr, direct_mapping_paddr, available_mems, PTE_A | PTE_D | PTE_R | PTE_W | PTE_G);
+    kvmmap(kpgtbl, direct_mapping_vaddr, direct_mapping_paddr, available_mems, PTE_A | PTE_D | PTE_R | PTE_W);
 
     // We have allocated some pages from 0xffff_ffc0_802x_xxxx;
     // So page allocator should starts after these used pages.
@@ -167,7 +167,7 @@ void kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
             uint64 __kva newpg = allockernelpage();
             memset((void *)newpg, 0, PGSIZE);
             pgtbl_level1 = (pagetable_t)newpg;
-            kpgtbl[vpn2] = MAKE_PTE(KVA_TO_PA(newpg), PTE_G);
+            kpgtbl[vpn2] = MAKE_PTE(KVA_TO_PA(newpg), 0);
         } else {
             pte_t pte = kpgtbl[vpn2];
             // check validity: pte must points to next level page table.
@@ -190,7 +190,7 @@ void kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
             uint64 __kva newpg = allockernelpage();
             memset((void *)newpg, 0, PGSIZE);
             pgtbl_level0       = (pagetable_t)newpg;
-            pgtbl_level1[vpn1] = MAKE_PTE(KVA_TO_PA(newpg), PTE_G);
+            pgtbl_level1[vpn1] = MAKE_PTE(KVA_TO_PA(newpg), 0);
         } else {
             pte_t pte = pgtbl_level1[vpn1];
             // check validity: pte must points to next level page table.
