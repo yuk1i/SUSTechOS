@@ -227,7 +227,7 @@ static void bootcpu_init() {
     infof("start scheduler!");
     scheduler();
 
-    assert("scheduler returns");
+    panic("scheduler returns");
 }
 
 static void secondarycpu_init() {
@@ -242,7 +242,7 @@ static void secondarycpu_init() {
     infof("start scheduler!");
     scheduler();
 
-    assert("scheduler returns");
+    panic("scheduler returns");
 }
 
 __noreturn static void bootcpu_start_relocation() {
