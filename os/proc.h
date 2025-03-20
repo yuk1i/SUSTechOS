@@ -59,6 +59,7 @@ struct proc {
     int index;
     struct mm *mm;
     struct vma *vma_brk;                // special vma for heap, included in mm->vma list.
+    uint64 brk;                         // end address of heap
     struct trapframe *__kva trapframe;  // data page for trampoline.S
     uint64 __kva kstack;                // Virtual address of kernel stack
     struct context context;             // swtch() here to run process

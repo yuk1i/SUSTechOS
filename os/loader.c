@@ -107,6 +107,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         errorf("mm_mappages vma_brk");
         return ret;
     }
+    p->brk = max_va_end;
 
     // setup stack
     struct vma *vma_ustack = mm_create_vma(p->mm);

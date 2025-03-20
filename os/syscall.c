@@ -141,20 +141,26 @@ int64 sys_sbrk(int64 n) {
     acquire(&p->mm->lock);
 
     struct vma *vma_brk = p->vma_brk;
-
-    release(&p->lock);
-
-    int64 old_brk = vma_brk->vm_end;
-    int64 new_brk = vma_brk->vm_end + n;
+    int64 old_brk       = p->brk;
+    int64 new_brk       = (int64)p->brk + n;
 
     if (new_brk < vma_brk->vm_start) {
         warnf("userprog requested to shrink brk, but underflow.");
         ret = -EINVAL;
     } else {
-        ret = mm_remap(vma_brk, vma_brk->vm_start, new_brk, vma_brk->pte_flags);
+        int64 roundup = PGROUNDUP(new_brk);
+        if (roundup == vma_brk->vm_end) {
+            ret = 0;
+        } else {
+            ret = mm_remap(vma_brk, vma_brk->vm_start, roundup, vma_brk->pte_flags);
+        }
+        if (ret == 0) {
+            p->brk = new_brk;
+        }
     }
 
     release(&p->mm->lock);
+    release(&p->lock);
 
     if (ret == 0) {
         return old_brk;

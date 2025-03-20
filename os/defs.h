@@ -24,7 +24,7 @@
 #define NPROC         (512)
 #define KSTRING_MAX   (256)
 #define MAXARG        (32)
-#define PHYS_MEM_SIZE (64ull * 1024 * 1024)
+#define PHYS_MEM_SIZE (128ull * 1024 * 1024)
 
 // Common macros
 #define MIN(a, b)      (a < b ? a : b)

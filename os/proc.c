@@ -220,6 +220,7 @@ int fork() {
         goto err_free;
     // Set np's vma_brk
     np->vma_brk = mm_find_vma(np->mm, p->vma_brk->vm_start);
+    np->brk     = p->brk;
 
     release(&p->mm->lock);
     release(&np->mm->lock);

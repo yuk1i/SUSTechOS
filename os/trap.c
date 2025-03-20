@@ -133,7 +133,7 @@ static void handle_pgfault(void) {
     //			- ..., a page-fault exception is raised.
     //		> Standard supervisor software should be written to assume either or both PTE update schemes may be in effect.
 
-    if (pte != NULL && (*pte & PTE_V)) {
+    if (pte != NULL && (*pte & PTE_V) && (*pte & PTE_U)) {
         *pte |= PTE_A;
         if (cause == StorePageFault)
             *pte |= PTE_D;

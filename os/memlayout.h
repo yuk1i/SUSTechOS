@@ -69,6 +69,7 @@
 #define USER_TOP   (MAXVA)
 #define TRAMPOLINE (USER_TOP - PGSIZE)
 #define TRAPFRAME  (TRAMPOLINE - PGSIZE)
+#define MAX_USERVA (TRAPFRAME - 1)
 
 
 #endif  // MEMLAYOUT_H

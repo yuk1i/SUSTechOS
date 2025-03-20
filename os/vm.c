@@ -29,7 +29,7 @@ pte_t *walk(struct mm *mm, uint64 va, int alloc) {
     pagetable_t pagetable = mm->pgt;
 
     if (!IS_USER_VA(va))
-        panic("invalid user VA");
+        return NULL;
 
     for (int level = 2; level > 0; level--) {
         pte_t *pte = &pagetable[PX(level, va)];
@@ -249,6 +249,7 @@ int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
     assert(PGALIGNED(start));
     assert(PGALIGNED(end));
     assert((pte_flags & PTE_R) || (pte_flags & PTE_W) || (pte_flags & PTE_X));
+    debugf("remap: [%p, %p), flags = %p", start, end, pte_flags);
 
     pte_t *pte;
     struct mm *mm = vma->owner;
