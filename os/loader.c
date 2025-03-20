@@ -183,7 +183,7 @@ int load_init_app() {
     if (load_user_elf(app, p, argv) < 0) {
         panic("fail to load init elf.");
     }
-    p->state          = RUNNABLE;
+    p->state = RUNNABLE;
     add_task(p);
     init_proc = p;
     release(&p->lock);

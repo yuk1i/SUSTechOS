@@ -62,6 +62,7 @@ static int allocpid() {
 }
 static void first_sched_ret(void) {
     release(&curr_proc()->lock);
+    assert(curr_proc()->state == RUNNING);
     intr_off();
     usertrapret();
 }
@@ -121,6 +122,9 @@ found:
     memset((void *)p->trapframe, 0, PGSIZE);
     p->context.ra = (uint64)first_sched_ret;
     p->context.sp = p->kstack + KERNEL_STACK_SIZE;
+
+    // Project signal: signal: init
+    siginit(p);
 
     assert(holding(&p->lock));
 
@@ -227,6 +231,9 @@ int fork() {
     // copy saved user registers.
     *(np->trapframe) = *(p->trapframe);
 
+    // Project signal: fork
+    siginit_fork(p, np);
+
     // Cause fork to return 0 in the child.
     np->trapframe->a0 = 0;
     np->parent        = p;
@@ -264,6 +271,9 @@ int exec(char *name, char *args[]) {
     mm_free_pages(p->mm);
     release(&p->mm->lock);
 
+    // Project signal: exec
+    siginit_exec(p);
+
     if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
         return ret;
@@ -300,6 +310,7 @@ int wait(int pid, int *code) {
                         *code = child->exit_code;
                     freeproc(child);
                     release(&child->lock);
+
                     release(&wait_lock);
                     return cpid;
                 }
