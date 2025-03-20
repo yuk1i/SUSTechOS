@@ -38,8 +38,8 @@ struct cpu {
     int inkernel_trap;             // whether we are in a kernel trap context
     int noff;                      // how many push-off
     int interrupt_on;              // Is the interrupt Enabled before the first push-off?
-    uint64 sched_kstack_top;  // top of per-cpu sheduler kernel stack
-    int cpuid;  // for debug purpose
+    uint64 sched_kstack_top;       // top of per-cpu sheduler kernel stack
+    int cpuid;                     // for debug purpose
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -50,7 +50,7 @@ struct proc {
     // p->lock must be held when accessing to these fields:
     enum procstate state;  // Process state
     int pid;               // Process ID
-    uint64 exit_code;
+    int exit_code;
     void *sleep_chan;
     int killed;
 
@@ -74,8 +74,8 @@ struct cpu *getcpu(int i);
 
 static inline struct proc *curr_proc() {
     push_off();
-    struct cpu* c = mycpu();
-    struct proc* p = c->proc;
+    struct cpu *c  = mycpu();
+    struct proc *p = c->proc;
     pop_off();
     return p;
 }
@@ -84,9 +84,12 @@ static inline struct proc *curr_proc() {
 void proc_init();
 struct proc *allocproc();
 int fork();
-int exec(char *name, char* arg[]);
+int exec(char *name, char *arg[]);
 int wait(int, int *);
 void exit(int);
+int kill(int pid);
+int iskilled(struct proc *);
+void setkilled(struct proc *);
 
 void sleep(void *chan, spinlock_t *lk);
 void wakeup(void *chan);
@@ -99,6 +102,5 @@ void add_task(struct proc *);
 
 // swtch.S
 void swtch(struct context *, struct context *);
-
 
 #endif  // PROC_H

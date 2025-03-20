@@ -60,23 +60,31 @@ uservec:
         sd t5, 272(a0)
         sd t6, 280(a0)
 
-        # resotre a0 from sscratch, and save it
+        # resotre a0 from sscratch, and save it in p->trapframe->a0
         csrr t0, sscratch
         sd t0, 112(a0)
 
-        # save epc
+        # save sepc, where user stops when trapping into kernel.
         csrr t1, sepc
         sd t1, 24(a0)
 
-        # load kernel_satp
+        # fetch the kernel page table address, from p->trapframe->kernel_satp.
         ld t1, 0(a0)
+
+        # initialize kernel stack pointer, from p->trapframe->kernel_sp
         ld sp, 8(a0)
+
+        # load the address of usertrap(), from p->trapframe->kernel_trap
         ld t0, 16(a0)
+        
+        # make tp hold the current cpuid, from p->trapframe->kernel_hartid
         ld tp, 32(a0)
 
+        # switch to the kernel page table, cannot dereference from a0 anymore
         csrw satp, t1
         sfence.vma zero, zero
 
+        # jump to usertrap(), under the kernel page table
         jr t0
 
 .globl userret
@@ -86,6 +94,7 @@ userret:
         # usertrapret() calls here.
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
+        # a2: uservec
 
         # switch to the user page table.
         csrw satp, a1

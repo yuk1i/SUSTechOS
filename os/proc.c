@@ -270,7 +270,7 @@ int exec(char *name, char *args[]) {
 
     release(&p->lock);
 
-    // syscall will overwrite trapframe->a0 to the return value.
+    // syscall() will overwrite trapframe->a0 to the return value.
     return p->trapframe->a0;
 }
 
@@ -336,9 +336,9 @@ void exit(int code) {
         if (child == p)
             continue;
         acquire(&child->lock);
-        if (child->parent == p){
+        if (child->parent == p) {
             child->parent = init_proc;
-            wakeinit = 1;
+            wakeinit      = 1;
             // if child has dead, wake up init to do clean up.
         }
         release(&child->lock);
@@ -359,4 +359,42 @@ void exit(int code) {
 
     sched();
     panic_never_reach();
+}
+
+// Kill the process with the given pid.
+// The victim won't exit until it tries to return
+// to user space (see usertrap() in trap.c).
+int kill(int pid) {
+    struct proc *p;
+
+    for (int i = 0; i < NPROC; i++) {
+        p = pool[i];
+        acquire(&p->lock);
+        if (p->pid == pid) {
+            p->killed = 1;
+            if (p->state == SLEEPING) {
+                // Wake process from sleep().
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+            return 0;
+        }
+        release(&p->lock);
+    }
+    return -1;
+}
+
+void setkilled(struct proc *p) {
+    acquire(&p->lock);
+    p->killed = 1;
+    release(&p->lock);
+}
+
+int iskilled(struct proc *p) {
+    int k;
+
+    acquire(&p->lock);
+    k = p->killed;
+    release(&p->lock);
+    return k;
 }

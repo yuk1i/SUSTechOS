@@ -95,96 +95,108 @@ void trap_init() {
     set_kerneltrap();
 }
 
-void unknown_trap() {
+// UserTrap begins
+
+static int handle_intr(void) {
+    uint64 cause = r_scause();
+    uint64 code  = cause & SCAUSE_EXCEPTION_CODE_MASK;
+    if (code == SupervisorTimer) {
+        tracef("time interrupt!");
+        set_next_timer();
+        return 1;
+    } else if (code == SupervisorExternal) {
+        tracef("s-external interrupt from usertrap!");
+        plic_handle();
+        return 2;
+    } else {
+        return 0;
+    }
+}
+
+static void handle_pgfault(void) {
+    uint64 cause   = r_scause();
+    uint64 addr    = r_stval();
+    struct proc *p = curr_proc();
+    struct mm *mm;
+    pte_t *pte;
+
+    acquire(&p->lock);
+    mm = p->mm;
+    acquire(&mm->lock);
+    release(&p->lock);
+    pte = walk(mm, addr, 0);
+    release(&mm->lock);
+
+    //	docs: Volume II: RISC-V Privileged Architectures V1.10, Page 61,
+    //		> Two schemes to manage the A and D bits are permitted:
+    // 			- ..., the implementation(hardware) sets the corresponding bit in the PTE.
+    //			- ..., a page-fault exception is raised.
+    //		> Standard supervisor software should be written to assume either or both PTE update schemes may be in effect.
+
+    if (pte != NULL && (*pte & PTE_V)) {
+        *pte |= PTE_A;
+        if (cause == StorePageFault)
+            *pte |= PTE_D;
+        sfence_vma();
+    } else {
+        infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
+        setkilled(p);
+    }
+}
+
+static void unknown_trap(void) {
     print_sysregs(true);
     vm_print(curr_proc()->mm->pgt);
     errorf("unknown trap: %p, stval = %p", r_scause(), r_stval());
-    exit(-1);
+    setkilled(curr_proc());
 }
 
-//
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
-//
 void usertrap() {
     set_kerneltrap();
-    assert(!intr_get());
 
-    struct trapframe *trapframe = curr_proc()->trapframe;
-    tracef("trap from user epc = %p", trapframe->epc);
-
+    if (intr_get())
+        panic("entered interrupts enabled");
     if ((r_sstatus() & SSTATUS_SPP) != 0)
         panic("usertrap: not from user mode");
 
+    int which_dev               = 0;
+    struct proc *p              = curr_proc();
+    struct trapframe *trapframe = p->trapframe;
+    tracef("trap from user epc = %p", trapframe->epc);
+
     uint64 cause = r_scause();
-    uint64 code  = cause & SCAUSE_EXCEPTION_CODE_MASK;
     if (cause & SCAUSE_INTERRUPT) {
-        // check the 63-bit of scause: Interrupt
-        switch (code) {
-            case SupervisorTimer:
-                tracef("time interrupt!");
-                set_next_timer();
-                yield();
-                break;
-            case SupervisorExternal:
-                tracef("s-external interrupt from usertrap!");
-                plic_handle();
-                break;
-            default:
-                unknown_trap();
-                break;
-        }
+        which_dev = handle_intr();
+    } else if (cause == UserEnvCall) {
+        if (iskilled(p))
+            exit(-1);
+
+        // sepc points to the ecall instruction,
+        // but we want to return to the next instruction.
+        trapframe->epc += 4;
+
+        // an interrupt will change sepc, scause, and sstatus,
+        // so enable only now that we're done with those registers.
+        intr_on();
+        syscall();
+        intr_off();
+    } else if (cause == LoadPageFault || cause == StorePageFault || cause == InstructionPageFault) {
+        handle_pgfault();
     } else {
-        switch (code) {
-            case UserEnvCall:
-                trapframe->epc += 4;
-                intr_on();
-                syscall();
-                intr_off();
-                break;
-            case LoadPageFault:
-            case StorePageFault:
-            case InstructionPageFault: {
-                uint64 addr    = r_stval();
-                struct proc *p = curr_proc();
-                acquire(&p->lock);
-                struct mm *mm = p->mm;
-                acquire(&mm->lock);
-                release(&p->lock);
-                pte_t *pte = walk(mm, addr, 0);
-                release(&mm->lock);
-                if (pte != NULL && (*pte & PTE_V)) {
-                    *pte |= PTE_A;
-                    if (cause == StorePageFault)
-                        *pte |= PTE_D;
-                    sfence_vma();
-                    break;
-                } else {
-                infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), trapframe->epc);
-                    exit(-2);
-                }
-            }
-            case StoreMisaligned:
-            case InstructionMisaligned:
-            case LoadMisaligned:
-                errorf(
-                    "%d in application, bad addr = %p, bad instruction = %p, "
-                    "core dumped.",
-                    cause,
-                    r_stval(),
-                    trapframe->epc);
-                vm_print(curr_proc()->mm->pgt);
-                exit(-2);
-                break;
-            case IllegalInstruction:
-                errorf("IllegalInstruction in application, core dumped.");
-                exit(-3);
-                break;
-            default:
-                unknown_trap();
-                break;
-        }
+        unknown_trap();
     }
+
+    // are we still alive?
+    if (iskilled(p))
+        exit(-1);
+
+    // if it's a timer intr, call yield to give up CPU.
+    if (which_dev == 1)
+        yield();
+
+    // prepare for return to user mode
     assert(!intr_get());
     usertrapret();
 }
@@ -197,14 +209,16 @@ void usertrapret() {
         panic("usertrapret entered with intr on");
 
     struct trapframe *trapframe = curr_proc()->trapframe;
-    trapframe->kernel_satp      = r_satp();                                 // kernel page table
-    trapframe->kernel_sp        = curr_proc()->kstack + KERNEL_STACK_SIZE;  // process's kernel stack
-    trapframe->kernel_trap      = (uint64)usertrap;
-    trapframe->kernel_hartid    = r_tp();  // unuesd
 
+    // set up trapframe values that uservec will need when
+    // the process next traps into the kernel.
+    trapframe->kernel_satp   = r_satp();                                 // kernel page table
+    trapframe->kernel_sp     = curr_proc()->kstack + KERNEL_STACK_SIZE;  // process's kernel stack
+    trapframe->kernel_trap   = (uint64)usertrap;                         // user's trap handler
+    trapframe->kernel_hartid = r_tp();                                   // cpuid()
+
+    // set S Exception Program Counter to the saved user pc.
     w_sepc(trapframe->epc);
-    // set up the registers that trampoline.S's sret will use
-    // to get to user space.
 
     // set S Previous Privilege mode to User.
     uint64 x = r_sstatus();
@@ -216,6 +230,9 @@ void usertrapret() {
     uint64 satp  = MAKE_SATP(KVA_TO_PA(curr_proc()->mm->pgt));
     uint64 stvec = (TRAMPOLINE + (uservec - trampoline)) & ~0x3;
 
+    // jump to userret in trampoline.S at the top of memory, which
+    // switches to the user page table, restores user registers,
+    // and switches to user mode with sret.
     uint64 fn = TRAMPOLINE + (userret - trampoline);
     tracef("return to user @%p, fn %p", trapframe->epc);
     ((void (*)(uint64, uint64, uint64))fn)(TRAPFRAME, satp, stvec);
