@@ -55,7 +55,7 @@ struct ktrapframe {
  * @brief User-mode Trap frame
  *
  * Used when we were in the user-mode, and we meet an Exception (including ecall) or Interrupt to get into the trap.
- * 
+ *
  * This trapframe is stored in the special physical page, which is mapped to the same VA `TRAPFRAME`.
  *
  */
@@ -127,5 +127,8 @@ enum Interrupt {
 void trap_init();
 void kerneltrap(struct ktrapframe *ktf);
 void usertrapret();
+
+extern uint64 ticks;
+extern struct spinlock tickslock;
 
 #endif  // TRAP_H

@@ -2,6 +2,7 @@
 #include "ktest.h"
 
 extern int64 freepages_count;
+extern allocator_t kstrbuf;
 
 uint64 ktest_syscall(uint64 args[6]) {
     uint64 which = args[0];
@@ -14,6 +15,8 @@ uint64 ktest_syscall(uint64 args[6]) {
             break;
         case KTEST_GET_NRFREEPGS:
             return freepages_count;
+        case KTEST_GET_NRSTRBUF:
+            return kstrbuf.available_count;
     }
     return 0;
 }

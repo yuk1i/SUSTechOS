@@ -112,8 +112,20 @@ int64 sys_kill(int pid) {
     return kill(pid);
 }
 
-int64 sys_sleep() {
-    panic("unimplemented");
+int64 sys_sleep(int64 n) {
+    struct proc *p = curr_proc();
+
+    acquire(&tickslock);
+    uint64 ticks0 = ticks;
+    while (ticks - ticks0 < n) {
+        if (iskilled(p)) {
+            release(&tickslock);
+            return -1;
+        }
+        sleep(&ticks, &tickslock);
+    }
+    release(&tickslock);
+    return 0;
 }
 
 int64 sys_yield() {
@@ -191,7 +203,7 @@ void syscall() {
             ret = sys_kill(args[0]);
             break;
         case SYS_sleep:
-            ret = sys_sleep();
+            ret = sys_sleep(args[0]);
             break;
         case SYS_yield:
             ret = sys_yield();

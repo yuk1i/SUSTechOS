@@ -11,6 +11,9 @@
 static int64 kp_print_lock = 0;
 extern volatile int panicked;
 
+struct spinlock tickslock;
+uint64 ticks;
+
 void plic_handle() {
     int irq = plic_claim();
     if (irq == uart0_irq) {
@@ -20,6 +23,28 @@ void plic_handle() {
 
     if (irq)
         plic_complete(irq);
+}
+
+static int handle_intr(void) {
+    uint64 cause = r_scause();
+    uint64 code  = cause & SCAUSE_EXCEPTION_CODE_MASK;
+    if (code == SupervisorTimer) {
+        tracef("time interrupt!");
+        if (cpuid() == 0) {
+            acquire(&tickslock);
+            ticks++;
+            wakeup(&ticks);
+            release(&tickslock);
+        }
+        set_next_timer();
+        return 1;
+    } else if (code == SupervisorExternal) {
+        tracef("s-external interrupt from usertrap!");
+        plic_handle();
+        return 2;
+    } else {
+        return 0;
+    }
 }
 
 void kernel_trap(struct ktrapframe *ktf) {
@@ -44,19 +69,9 @@ void kernel_trap(struct ktrapframe *ktf) {
             panic("other CPU has panicked");
         }
         // handle interrupt
-        switch (exception_code) {
-            case SupervisorTimer:
-                tracef("s-timer interrupt, cycle: %d", r_time());
-                set_next_timer();
-                // we never preempt kernel threads.
-                break;
-            case SupervisorExternal:
-                tracef("s-external interrupt.");
-                plic_handle();
-                break;
-            default:
-                errorf("unhandled interrupt: %d", cause);
-                goto kernel_panic;
+        if (handle_intr() == 0) {
+            errorf("unhandled interrupt: %d", cause);
+            goto kernel_panic;
         }
     } else {
         // kernel exception, unexpected.
@@ -93,25 +108,10 @@ void set_kerneltrap() {
 // set up to take exceptions and traps while in the kernel.
 void trap_init() {
     set_kerneltrap();
+    spinlock_init(&tickslock, "user-time");
 }
 
 // UserTrap begins
-
-static int handle_intr(void) {
-    uint64 cause = r_scause();
-    uint64 code  = cause & SCAUSE_EXCEPTION_CODE_MASK;
-    if (code == SupervisorTimer) {
-        tracef("time interrupt!");
-        set_next_timer();
-        return 1;
-    } else if (code == SupervisorExternal) {
-        tracef("s-external interrupt from usertrap!");
-        plic_handle();
-        return 2;
-    } else {
-        return 0;
-    }
-}
 
 static void handle_pgfault(void) {
     uint64 cause   = r_scause();

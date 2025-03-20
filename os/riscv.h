@@ -33,6 +33,11 @@ static inline void w_sip(uint64 x) {
     asm volatile("csrw sip, %0" : : "r"(x));
 }
 
+static inline void w_stimecmp(uint64 x) {
+    // asm volatile("csrw stimecmp, %0" : : "r" (x));
+    asm volatile("csrw 0x14d, %0" : : "r"(x));
+}
+
 // Supervisor Interrupt Enable
 #define SIE_SEIE (1L << 9)  // external
 #define SIE_STIE (1L << 5)  // timer
