@@ -2,6 +2,7 @@
 
 #include "console.h"
 #include "defs.h"
+#include "ktest/ktest.h"
 #include "loader.h"
 #include "timer.h"
 #include "trap.h"
@@ -11,6 +12,7 @@ int64 sys_fork() {
 }
 
 int64 sys_exec(uint64 __user path, uint64 __user argv) {
+    int ret;
     char *kpath = kalloc(&kstrbuf);
     char *arg[MAXARG];
     memset(kpath, 0, KSTRING_MAX);
@@ -22,23 +24,38 @@ int64 sys_exec(uint64 __user path, uint64 __user argv) {
     acquire(&p->mm->lock);
     release(&p->lock);
 
-    copystr_from_user(p->mm, kpath, path, KSTRING_MAX);
-    for (int i = 0; i < 20; i++) {
+    if ((ret = copystr_from_user(p->mm, kpath, path, KSTRING_MAX)) < 0) {
+        goto free;
+    }
+    for (int i = 0; i < MAXARG; i++) {
         uint64 useraddr;
-        copy_from_user(p->mm, (char *)&useraddr, argv + i * sizeof(uint64), sizeof(uint64));
+        if ((ret = copy_from_user(p->mm, (char *)&useraddr, argv + i * sizeof(uint64), sizeof(uint64))) < 0) {
+            goto free;
+        }
         if (useraddr == 0) {
             arg[i] = 0;
             break;
         }
         arg[i] = kalloc(&kstrbuf);
-        copystr_from_user(p->mm, arg[i], useraddr, KSTRING_MAX);
+        assert(arg[i] != NULL);
+        if ((ret = copystr_from_user(p->mm, arg[i], useraddr, KSTRING_MAX)) < 0) {
+            goto free;
+        }
     }
     release(&p->mm->lock);
 
     debugf("sys_exec %s\n", kpath);
-    
-    int64 ret = exec(kpath, arg);
 
+    ret = exec(kpath, arg);
+
+    kfree(&kstrbuf, kpath);
+    for (int i = 0; arg[i]; i++) {
+        kfree(&kstrbuf, arg[i]);
+    }
+    return ret;
+
+free:
+    release(&p->mm->lock);
     kfree(&kstrbuf, kpath);
     for (int i = 0; arg[i]; i++) {
         kfree(&kstrbuf, arg[i]);
@@ -91,6 +108,10 @@ int64 sys_getppid() {
     return ppid;
 }
 
+int64 sys_kill(int pid) {
+    return kill(pid);
+}
+
 int64 sys_sleep() {
     panic("unimplemented");
 }
@@ -103,11 +124,11 @@ int64 sys_yield() {
 int64 sys_sbrk(int64 n) {
     int64 ret;
     struct proc *p = curr_proc();
-    
+
     acquire(&p->lock);
     acquire(&p->mm->lock);
 
-    struct vma* vma_brk = p->vma_brk;
+    struct vma *vma_brk = p->vma_brk;
 
     release(&p->lock);
 
@@ -116,7 +137,7 @@ int64 sys_sbrk(int64 n) {
 
     if (new_brk < vma_brk->vm_start) {
         warnf("userprog requested to shrink brk, but underflow.");
-        ret = -1;
+        ret = -EINVAL;
     } else {
         ret = mm_remap(vma_brk, vma_brk->vm_start, new_brk, vma_brk->pte_flags);
     }
@@ -166,6 +187,9 @@ void syscall() {
         case SYS_getppid:
             ret = sys_getppid();
             break;
+        case SYS_kill:
+            ret = sys_kill(args[0]);
+            break;
         case SYS_sleep:
             ret = sys_sleep();
             break;
@@ -183,6 +207,9 @@ void syscall() {
             break;
         case SYS_write:
             ret = sys_write(args[0], args[1], args[2]);
+            break;
+        case SYS_ktest:
+            ret = ktest_syscall(args);
             break;
         default:
             ret = -1;

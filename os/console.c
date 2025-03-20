@@ -8,6 +8,8 @@
 int uart0_irq;
 static int uart_inited = false;
 static void uart_putchar(int);
+extern void acquire_kprint(void);
+extern void release_kprint(void);
 
 static struct spinlock uart_tx_lock;
 volatile int panicked = 0;
@@ -164,37 +166,48 @@ void uart_intr() {
 
 int64 user_console_write(uint64 __user buf, int64 len) {
     if (len <= 0)
-        return -1;
+        return -EINVAL;
+    len = MIN(len, PGSIZE);
 
+    int ret;
     struct proc *p = curr_proc();
     struct mm *mm;
+
+    char *kbuf = kallocpage();
+    if (kbuf == NULL) {
+        return -ENOMEM;
+    }
+    kbuf = (char *)PA_TO_KVA(kbuf);
 
     acquire(&p->lock);
     mm = p->mm;
     acquire(&mm->lock);
     release(&p->lock);
 
-    char kbuf[len];
-    copy_from_user(mm, kbuf, buf, len);
+    if ((ret = copy_from_user(mm, kbuf, buf, len)) < 0) {
+        release(&mm->lock);
+        goto err;
+    }
     release(&mm->lock);
 
-    // we only sync on user's write.
+    // do not interfere with kernel panic's print.
+    acquire_kprint();
+    // do not interfere with other user's print.
     acquire(&uart_tx_lock);
-
-    extern uint64 kernelprint_lock;
-    while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
-    __sync_synchronize();
 
     for (int64 i = 0; i < len; i++) {
         consputc(kbuf[i]);
     }
 
-    __sync_synchronize();
-    __sync_lock_release(&kernelprint_lock);
-
     release(&uart_tx_lock);
+    release_kprint();
 
+    kfreepage((void*)KVA_TO_PA(kbuf));
     return len;
+
+err:
+    kfreepage((void*)KVA_TO_PA(kbuf));
+    return ret;
 }
 
 int64 user_console_read(uint64 __user buf, int64 n) {
@@ -235,7 +248,7 @@ int64 user_console_read(uint64 __user buf, int64 n) {
         acquire(&mm->lock);
         release(&p->lock);
 
-        if (copy_to_user(mm, (uint64)buf, &cbuf, 1) == -1) {
+        if (copy_to_user(mm, (uint64)buf, &cbuf, 1) < 0) {
             release(&mm->lock);
             break;
         }

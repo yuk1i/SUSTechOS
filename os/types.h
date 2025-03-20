@@ -19,4 +19,11 @@ typedef long int64;
 #define true  1
 #define false 0
 
+// errno
+
+#define ENOMEM 1
+#define EINVAL 2
+#define ECHILD 3
+#define ENOENT 4
+
 #endif  // TYPES_H

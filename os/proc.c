@@ -201,10 +201,11 @@ void wakeup(void *chan) {
 }
 
 int fork() {
+    int ret;
     struct proc *np = allocproc();
     // Allocate process.
     if (np == NULL) {
-        return -1;
+        return -ENOMEM;
     }
 
     assert(holding(&np->lock));
@@ -215,7 +216,7 @@ int fork() {
     acquire(&np->mm->lock);
 
     // Copy user memory from parent to child.
-    if (mm_copy(p->mm, np->mm))
+    if ((ret = mm_copy(p->mm, np->mm)) < 0)
         goto err_free;
     // Set np's vma_brk
     np->vma_brk = mm_find_vma(np->mm, p->vma_brk->vm_start);
@@ -243,14 +244,15 @@ err_free:
 
     freeproc(np);
     release(&np->lock);
-    return -1;
+    return ret;
 }
 
 int exec(char *name, char *args[]) {
     struct user_app *app = get_elf(name);
     if (app == NULL)
-        return -1;
+        return -ENOENT;
 
+    int ret;
     struct proc *p = curr_proc();
 
     acquire(&p->lock);
@@ -262,10 +264,9 @@ int exec(char *name, char *args[]) {
     mm_free_pages(p->mm);
     release(&p->mm->lock);
 
-    if (load_user_elf(app, p, args) < 0) {
+    if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
-        exit(-1);
-        return -1;
+        return ret;
     }
 
     release(&p->lock);
@@ -309,7 +310,7 @@ int wait(int pid, int *code) {
         // No waiting if we don't have any children.
         if (!havekids || p->killed) {
             release(&wait_lock);
-            return -1;
+            return -ECHILD;
         }
 
         debugf("pid %d sleeps for wait", p->pid);
@@ -381,7 +382,7 @@ int kill(int pid) {
         }
         release(&p->lock);
     }
-    return -1;
+    return -EINVAL;
 }
 
 void setkilled(struct proc *p) {

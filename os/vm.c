@@ -210,7 +210,7 @@ int mm_mappages(struct vma *vma) {
 
     if (vma_check_overlap(vma->owner, vma->vm_start, vma->vm_end, vma)) {
         errorf("overlap: [%p, %p)", vma->vm_start, vma->vm_end);
-        return -1;
+        return -EINVAL;
     }
 
     tracef("mappages: [%p, %p)", vma->vm_start, vma->vm_end);
@@ -223,16 +223,16 @@ int mm_mappages(struct vma *vma) {
     for (va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
         if ((pte = walk(mm, va, 1)) == 0) {
             errorf("pte invalid, va = %p", va);
-            return -1;
+            return -EINVAL;
         }
         if (*pte & PTE_V) {
             errorf("remap %p", va);
-            return -1;
+            return -EINVAL;
         }
         pa = kallocpage();
         if (!pa) {
             errorf("kallocpage");
-            return -1;
+            return -ENOMEM;
         }
         // memset((void *)PA_TO_KVA(pa), 0, PGSIZE);
         *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
@@ -256,7 +256,7 @@ int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
 
     if (vma_check_overlap(mm, start, end, vma)) {
         errorf("overlap: [%p, %p)", start, end);
-        return -1;
+        return -EINVAL;
     }
 
     const uint64 iterstart = MIN(start, vma->vm_start);
@@ -300,7 +300,7 @@ int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
                 *pte = 0;
             } else {
                 errorf("remap: mapping should exist, va = %p", va);
-                return -1;
+                return -EINVAL;
             }
         }
     }
@@ -331,7 +331,7 @@ err:
             }
         }
     }
-    return -1;
+    return -ENOMEM;
 }
 
 int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
@@ -342,7 +342,7 @@ int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
 
     if (vma_check_overlap(mm, va, va + PGSIZE, NULL)) {
         errorf("overlap: [%p, %p)", va, va + PGSIZE);
-        return -1;
+        return -EINVAL;
     }
 
     tracef("mappagesat: %p -> %p", va, pa);
@@ -351,12 +351,12 @@ int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
 
     if ((pte = walk(mm, va, 1)) == 0) {
         errorf("pte invalid, va = %p", va);
-        return -1;
+        return -EINVAL;
     }
     if (*pte & PTE_V) {
         errorf("remap %p", va);
         vm_print(mm->pgt);
-        return -1;
+        return -EINVAL;
     }
     *pte = PA2PTE(pa) | flags | PTE_V;
     sfence_vma();
@@ -366,7 +366,7 @@ int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
 
 // Used in fork.
 // Copy the pagetable page and all the user pages.
-// Return 0 on success, -1 on error.
+// Return 0 on success, negative on error.
 int mm_copy(struct mm *old, struct mm *new) {
     assert(holding(&old->lock));
     assert(holding(&new->lock));
@@ -396,7 +396,7 @@ int mm_copy(struct mm *old, struct mm *new) {
     return 0;
 err:
     mm_free_pages(new);
-    return -1;
+    return -ENOMEM;
 }
 
 struct vma* mm_find_vma(struct mm* mm, uint64 va) {

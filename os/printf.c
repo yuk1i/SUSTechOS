@@ -8,7 +8,18 @@
 static char digits[] = "0123456789abcdef";
 extern volatile int panicked;
 
-uint64 kernelprint_lock = 0;
+static uint64 kernelprint_lock = 0;
+
+// Kernel's output should be prioritized.
+void acquire_kprint(void) {
+    while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
+    __sync_synchronize();
+}
+
+void release_kprint(void) {
+    __sync_synchronize();
+    __sync_lock_release(&kernelprint_lock);
+}
 
 static void printint(int xx, int base, int sign) {
     char buf[16];
@@ -50,8 +61,7 @@ static void vprintf(char *fmt, va_list ap) {
     int intr     = intr_off();
     int panicked = panicked;
     if (!panicked) {
-        while (__sync_lock_test_and_set(&kernelprint_lock, 1) != 0);
-        __sync_synchronize();
+        acquire_kprint();
     }
 
     for (i = 0; (c = fmt[i] & 0xff) != 0; i++) {
@@ -92,8 +102,7 @@ static void vprintf(char *fmt, va_list ap) {
     }
 
     if (!panicked) {
-        __sync_synchronize();
-        __sync_lock_release(&kernelprint_lock);
+        release_kprint();
     }
     if (intr)
         intr_on();

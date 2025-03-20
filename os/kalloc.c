@@ -72,7 +72,7 @@ void *__pa kallocpage() {
     }
     release(&kpagelock);
     
-    debugf("alloc: %p, by %p", l, ra);
+    debugf("alloc: %p, by %p", KVA_TO_PA(l), ra);
 
     if (l != NULL) {
         memset((char *)l, 0xaf, PGSIZE);  // fill with junk

@@ -29,6 +29,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     if (p == NULL || p->state == UNUSED)
         panic("...");
     acquire(&p->mm->lock);
+    int ret;
 
     Elf64_Ehdr *ehdr      = (Elf64_Ehdr *)app->elf_address;
     Elf64_Phdr *phdr_base = (Elf64_Phdr *)(app->elf_address + ehdr->e_phoff);
@@ -39,7 +40,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         if (phdr->p_type != PT_LOAD)
             continue;
         assert_str(PGALIGNED(phdr->p_vaddr), "Simplified loader only support page-aligned p_vaddr: %p", phdr->p_vaddr);
-        
+
         // resolve the permission of PTE for this phdr
         int pte_perm = PTE_U;
         if (phdr->p_flags & PF_R)
@@ -54,9 +55,9 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         vma->vm_end     = PGROUNDUP(vma->vm_start + phdr->p_memsz);
         vma->pte_flags  = pte_perm;
 
-        if (mm_mappages(vma)) {
+        if ((ret = mm_mappages(vma)) < 0) {
             errorf("mm_mappages");
-            return -1;
+            return ret;
         }
 
         int64 file_off      = 0;
@@ -102,14 +103,20 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     p->vma_brk->vm_start  = max_va_end;
     p->vma_brk->vm_end    = max_va_end;
     p->vma_brk->pte_flags = PTE_R | PTE_W | PTE_U;
-    mm_mappages(p->vma_brk);
+    if ((ret = mm_mappages(p->vma_brk)) < 0) {
+        errorf("mm_mappages vma_brk");
+        return ret;
+    }
 
     // setup stack
-    struct vma *vma_ustack   = mm_create_vma(p->mm);
-    vma_ustack->vm_start  = USTACK_START - USTACK_SIZE;
-    vma_ustack->vm_end    = USTACK_START;
-    vma_ustack->pte_flags = PTE_R | PTE_W | PTE_U;
-    mm_mappages(vma_ustack);
+    struct vma *vma_ustack = mm_create_vma(p->mm);
+    vma_ustack->vm_start   = USTACK_START - USTACK_SIZE;
+    vma_ustack->vm_end     = USTACK_START;
+    vma_ustack->pte_flags  = PTE_R | PTE_W | PTE_U;
+    if ((ret = mm_mappages(vma_ustack)) < 0) {
+        errorf("mm_mappages ustack");
+        return ret;
+    }
 
     for (uint64 va = vma_ustack->vm_start; va < vma_ustack->vm_end; va += PGSIZE) {
         void *__kva pa = (void *)PA_TO_KVA(walkaddr(p->mm, va));
