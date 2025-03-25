@@ -12,12 +12,14 @@ def validate_sv39_address(virtual_address):
     If the 38th bit is 0, all higher bits (63:39) must also be 0.
     """
     bit38 = (virtual_address >> 38) & 1
-    if bit38:
-        print("Bit38 == 1")
-        higher_addr = virtual_address >> 38
-        if higher_addr != (0xFFFFFFC000000000 >> 38):
-            raise ValueError(
-                "Invalid Sv39 address: higher bits do not match the 38th bit.")
+    higher_addr_mask = 0xffff_ff80_0000_0000
+    higher_all_zero = virtual_address & higher_addr_mask == 0
+    higher_all_one = virtual_address & higher_addr_mask == higher_addr_mask
+
+    if not (higher_all_zero or higher_all_one):
+        raise ValueError("Invalid Sv39 address: higher bits are not all 1")
+    if not (bit38 and higher_all_one):
+        raise ValueError("Invalid Sv39 address: higher bits do not match the 38th bit.")
 
 
 def calculate_vpn_and_offset(virtual_address):
@@ -41,7 +43,7 @@ def calculate_vpn_and_offset(virtual_address):
 
 
 def decode_sv39_pte(pte):
-    ppn = (pte >> 10) << 12  # PPN spans bits 10-53
+    ppn = ((pte >> 10) & ((1 << 44) - 1)) << 12  # PPN spans bits 10-53
     v = pte & (1 << 0)
     r = pte & (1 << 1)
     w = pte & (1 << 2)
