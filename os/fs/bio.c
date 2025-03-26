@@ -34,7 +34,7 @@ struct {
     struct buf *head;
 } bcache;
 
-void binit(void) {
+void bio_init(void) {
     struct buf *b;
 
     spinlock_init(&bcache.lock, "bcache");

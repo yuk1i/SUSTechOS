@@ -2,6 +2,7 @@
 
 #include "debug.h"
 #include "defs.h"
+#include "fs/fs.h"
 #include "riscv-io.h"
 #include "sbi.h"
 
@@ -13,6 +14,9 @@ extern void release_kprint(void);
 
 static struct spinlock uart_tx_lock;
 volatile int panicked = 0;
+
+struct file *stdout;
+struct file *stdin;
 
 #define BACKSPACE 0x100
 #define C(x)      ((x) - '@')  // Control-x
@@ -164,7 +168,32 @@ void uart_intr() {
     }
 }
 
-int64 user_console_write(uint64 __user buf, int64 len) {
+// define a file_operations for user-space console: only support read & write.
+
+static int user_console_read(struct file *file, char *__user buf, int len);
+static int user_console_write(struct file *file, char *__user buf, int len);
+
+static struct file_operations uart_file_ops = {
+    .read  = user_console_read,
+    .write = user_console_write,
+};
+
+void user_console_init() {
+    assert(uart_inited);
+    assert(stdout == NULL && stdin == NULL);
+
+    stdout              = filealloc();
+    stdout->mode        = FMODE_WRITE | FMODE_DEVICE;
+    stdout->ops         = &uart_file_ops;
+    stdout->private.raw = NULL;
+
+    stdin              = filealloc();
+    stdin->mode        = FMODE_READ | FMODE_DEVICE;
+    stdin->ops         = &uart_file_ops;
+    stdin->private.raw = NULL;
+}
+
+static int user_console_write(struct file *file, char *__user buf, int len) {
     if (len <= 0)
         return -EINVAL;
     len = MIN(len, PGSIZE);
@@ -184,7 +213,7 @@ int64 user_console_write(uint64 __user buf, int64 len) {
     acquire(&mm->lock);
     release(&p->lock);
 
-    if ((ret = copy_from_user(mm, kbuf, buf, len)) < 0) {
+    if ((ret = copy_from_user(mm, kbuf, (uint64)buf, len)) < 0) {
         release(&mm->lock);
         goto err;
     }
@@ -202,16 +231,16 @@ int64 user_console_write(uint64 __user buf, int64 len) {
     release(&uart_tx_lock);
     release_kprint();
 
-    kfreepage((void*)KVA_TO_PA(kbuf));
+    kfreepage((void *)KVA_TO_PA(kbuf));
     return len;
 
 err:
-    kfreepage((void*)KVA_TO_PA(kbuf));
+    kfreepage((void *)KVA_TO_PA(kbuf));
     return ret;
 }
 
-int64 user_console_read(uint64 __user buf, int64 n) {
-    uint target;
+static int user_console_read(struct file *file, char *__user buf, int n) {
+    int target;
     int c;
     char cbuf;
 

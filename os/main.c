@@ -8,6 +8,7 @@
 #include "sbi.h"
 #include "timer.h"
 #include "fs/virtio.h"
+#include "fs/fs.h"
 
 uint64 __pa kernel_image_end_4k;
 uint64 __pa kernel_image_end_2M;
@@ -214,6 +215,9 @@ static void bootcpu_init() {
     plicinit();
     kpgmgrinit();
     uvm_init();
+    file_init();
+    bio_init();
+    user_console_init();
     proc_init();
     allocator_init(&kstrbuf, "kstrbuf", KSTRING_MAX, 4096);
     loader_init();

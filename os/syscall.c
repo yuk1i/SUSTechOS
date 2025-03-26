@@ -6,6 +6,7 @@
 #include "loader.h"
 #include "timer.h"
 #include "trap.h"
+#include "fs/fs.h"
 
 int64 sys_fork() {
     return fork();
@@ -173,11 +174,21 @@ int64 sys_mmap() {
 }
 
 int64 sys_read(int fd, uint64 __user va, uint64 len) {
-    return user_console_read(va, len);
+    struct proc *p = curr_proc();
+    struct file *f = p->fdtable[fd];
+    if (f == NULL) {
+        return -EBADF;
+    }
+    return fileread(f, (char *)va, len);
 }
 
 int64 sys_write(int fd, uint64 __user va, uint len) {
-    return user_console_write(va, len);
+    struct proc *p = curr_proc();
+    struct file *f = p->fdtable[fd];
+    if (f == NULL) {
+        return -EBADF;
+    }
+    return filewrite(f, (char *)va, len);
 }
 
 void syscall() {

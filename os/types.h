@@ -25,5 +25,6 @@ typedef long int64;
 #define EINVAL 2
 #define ECHILD 3
 #define ENOENT 4
+#define EBADF  5
 
 #endif  // TYPES_H

@@ -10,6 +10,7 @@ enum {
     STDOUT = 1,
     STDERR = 2,
 };
+#define NPROCFILE (20)
 
 // Saved registers for kernel context switches.
 struct context {
@@ -63,6 +64,7 @@ struct proc {
     struct trapframe *__kva trapframe;  // data page for trampoline.S
     uint64 __kva kstack;                // Virtual address of kernel stack
     struct context context;             // swtch() here to run process
+    struct file *fdtable[NPROCFILE];        // File descriptor table
 };
 
 static inline int cpuid() {

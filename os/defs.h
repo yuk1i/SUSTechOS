@@ -27,8 +27,9 @@
 #define PHYS_MEM_SIZE (128ull * 1024 * 1024)
 
 // File system defines
-#define BSIZE         (512)
-#define NBUF          (100)
+#define BSIZE     (512)
+#define NBUF      (100)
+#define NFILE     (200)
 
 // Common macros
 #define MIN(a, b)      (a < b ? a : b)

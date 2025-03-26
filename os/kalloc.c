@@ -142,10 +142,11 @@ void allocator_init(struct allocator *alloc, char *name, uint64 object_size, uin
 
 void *kalloc(struct allocator *alloc) {
     assert(alloc);
+    assert_str(alloc->name, "allocator is not initialized. are you forget to call some init function?");
     acquire(&alloc->lock);
 
     if (alloc->available_count == 0)
-        panic("unavailable");
+        panic("unavailable: %s", alloc->name);
 
     alloc->available_count--;
 
