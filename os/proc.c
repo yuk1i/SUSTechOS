@@ -64,6 +64,11 @@ static int allocpid() {
 }
  static void first_sched_ret(void) {
     release(&curr_proc()->lock);
+    if (curr_proc() == init_proc) {
+        intr_on();
+        // do fs init here.
+        fs_init();
+    }
     intr_off();
     usertrapret();
 }

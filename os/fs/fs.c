@@ -6,33 +6,21 @@
 #include "virtio.h"
 #include "debug.h"
 
-static allocator_t buf_allocator;
+
 
 void fs_init() {
-    release(&curr_proc()->lock);
-    intr_on();
-
     infof("fs_init");
-    allocator_init(&buf_allocator, "buf", sizeof(struct buf), 1024);
+    binit();
 
-    struct buf* b = kalloc(&buf_allocator);
-    memset(b, 0, sizeof(*b));
-    uint64 pa = (uint64) kallocpage();
-    assert(pa);
-    b->data = (uint8*) PA_TO_KVA(pa);
-    memset(b->data, 0, PGSIZE);
-
-    b->blockno = 0;
-
-    virtio_disk_rw(b, 0);
-
+    struct buf* b = bread(0, 0);
+    assert(b->valid);
     infof("first read done!");
 
     hexdump(b->data, BSIZE);
 
     memmove(b->data, "hello, world!", 13);
-    virtio_disk_rw(b, 1);
+    bwrite(b);
     infof("first write done!");
 
-    while (1) asm volatile("wfi");
+    infof("fs_init ends");
 }
