@@ -10,16 +10,15 @@ struct file_operations;
 struct file {
     spinlock_t lock;  // lock protects ref and pos.
     int ref;          // reference count
-    int pos;         // read/write position
+    int pos;          // read/write position
 
     // --- following fields are immutable since filealloc ---
     fmode_t mode;
     struct file_operations *ops;
-    union {
-        void *raw;
-        struct pipe *pipe;  // FD_PIPE
-        struct inode *ip;   // FD_INODE and FD_DEVICE
-    } private;
+    void *private;
+
+    // pipe: struct pipe *
+    // normal file: struct inode*
 };
 
 struct file_operations {
@@ -33,6 +32,7 @@ struct file_operations {
 #define FMODE_WRITE 0x2
 
 #define FMODE_DEVICE 0x100
+#define FTYPE_PIPE   0x200
 
 #define major(dev)  ((dev) >> 16 & 0xFFFF)
 #define minor(dev)  ((dev) & 0xFFFF)
@@ -54,7 +54,13 @@ void file_init(void);
 struct file *filealloc(void);
 void fget(struct file *f);
 void fput(struct file *f);
-int fileread(struct file *f, char *buf, int len);
-int filewrite(struct file *f, char *buf, int len);
+int fileread(struct file *f, char *__user buf, int len);
+int filewrite(struct file *f, char *__user buf, int len);
+
+// pipe.c
+int pipealloc(struct file **f0, struct file **f1);
+int pipeclose(struct file *f);
+int pipewrite(struct file *f, char *__user addr, int n);
+int piperead(struct file *f, char *__user addr, int n);
 
 #endif

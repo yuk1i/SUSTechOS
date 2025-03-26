@@ -182,15 +182,15 @@ void user_console_init() {
     assert(uart_inited);
     assert(stdout == NULL && stdin == NULL);
 
-    stdout              = filealloc();
-    stdout->mode        = FMODE_WRITE | FMODE_DEVICE;
-    stdout->ops         = &uart_file_ops;
-    stdout->private.raw = NULL;
+    stdout          = filealloc();
+    stdout->mode    = FMODE_WRITE | FMODE_DEVICE;
+    stdout->ops     = &uart_file_ops;
+    stdout->private = NULL;
 
-    stdin              = filealloc();
-    stdin->mode        = FMODE_READ | FMODE_DEVICE;
-    stdin->ops         = &uart_file_ops;
-    stdin->private.raw = NULL;
+    stdin          = filealloc();
+    stdin->mode    = FMODE_READ | FMODE_DEVICE;
+    stdin->ops     = &uart_file_ops;
+    stdin->private = NULL;
 }
 
 static int user_console_write(struct file *file, char *__user buf, int len) {

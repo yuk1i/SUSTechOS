@@ -22,8 +22,6 @@ void plic_handle() {
         // printf("intr %d: UART0\n", r_tp());
     } else if (irq == VIRTIO0_IRQ) {
         virtio_disk_intr();
-    } else {
-        warnf("plic sends unexpected IRQ %d", irq);
     }
 
     if (irq)

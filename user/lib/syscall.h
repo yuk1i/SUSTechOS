@@ -20,6 +20,8 @@ void *sbrk(int increment);
 
 int read(int fd, void *buf, int count);
 int write(int fd, void *buf, int count);
+int pipe(int fds[2]);
+int close(int fd);
 
 int ktest(int type, void * arg, uint64 len);
 

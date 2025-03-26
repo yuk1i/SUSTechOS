@@ -28,6 +28,8 @@ entry("sbrk");
 entry("mmap");
 entry("read");
 entry("write");
+entry("pipe");
+entry("close");
 entry("gettimeofday");
 entry("ktest");
 

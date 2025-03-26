@@ -17,6 +17,8 @@
 
 #define SYS_read  22
 #define SYS_write 23
+#define SYS_pipe  24
+#define SYS_close 25
 
 #define SYS_gettimeofday 24
 

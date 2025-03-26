@@ -65,6 +65,16 @@ write:
  li a7, SYS_write
  ecall
  ret
+.global pipe
+pipe:
+ li a7, SYS_pipe
+ ecall
+ ret
+.global close
+close:
+ li a7, SYS_close
+ ecall
+ ret
 .global gettimeofday
 gettimeofday:
  li a7, SYS_gettimeofday

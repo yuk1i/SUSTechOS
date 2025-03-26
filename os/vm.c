@@ -54,7 +54,7 @@ pte_t *walk(struct mm *mm, uint64 va, int alloc) {
 // Can only be used to look up user pages.
 uint64 __pa walkaddr(struct mm *mm, uint64 va) {
     if (!IS_USER_VA(va))
-        panic("invalid user VA");
+        panic("invalid user VA: %p", va);
 
     assert_str(PGALIGNED(va), "unaligned va %p", va);
     assert(holding(&mm->lock));

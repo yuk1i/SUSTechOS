@@ -2,11 +2,24 @@
 
 #include "console.h"
 #include "defs.h"
+#include "fs/fs.h"
 #include "ktest/ktest.h"
 #include "loader.h"
 #include "timer.h"
 #include "trap.h"
-#include "fs/fs.h"
+
+static int fdalloc(struct file *f) {
+    int fd;
+    struct proc *p = curr_proc();
+
+    for (fd = 0; fd < NPROCFILE; fd++) {
+        if (p->fdtable[fd] == NULL) {
+            p->fdtable[fd] = f;
+            return fd;
+        }
+    }
+    return -1;
+}
 
 int64 sys_fork() {
     return fork();
@@ -191,6 +204,52 @@ int64 sys_write(int fd, uint64 __user va, uint len) {
     return filewrite(f, (char *)va, len);
 }
 
+int64 sys_pipe(int __user fds[2]) {
+    int ret;
+    int fd0 = -1, fd1 = -1;
+    int kfds[2];
+    struct file *rf, *wf;
+    struct proc *p = curr_proc();
+
+    if (pipealloc(&rf, &wf) < 0) {
+        return -ENOMEM;
+    }
+
+    if ((fd0 = fdalloc(rf)) < 0 || (fd1 = fdalloc(wf)) < 0) {
+        if (fd0 >= 0)
+            p->fdtable[fd0] = NULL;
+        fput(rf);
+        fput(wf);
+        return -EBADF;
+    }
+
+    kfds[0] = fd0;
+    kfds[1] = fd1;
+
+    acquire(&p->mm->lock);
+    ret = copy_to_user(p->mm, (uint64)fds, (char *)&kfds, sizeof(kfds));
+    release(&p->mm->lock);
+    if (ret < 0) {
+        fput(rf);
+        fput(wf);
+        p->fdtable[fd0] = NULL;
+        p->fdtable[fd1] = NULL;
+        return ret;
+    }
+    return 0;
+}
+
+int64 sys_close(int fd) {
+    struct proc *p = curr_proc();
+    struct file *f = p->fdtable[fd];
+    if (f == NULL) {
+        return -EBADF;
+    }
+    fput(f);
+    p->fdtable[fd] = NULL;
+    return 0;
+}
+
 void syscall() {
     struct trapframe *trapframe = curr_proc()->trapframe;
     int id                      = trapframe->a7;
@@ -236,6 +295,12 @@ void syscall() {
             break;
         case SYS_write:
             ret = sys_write(args[0], args[1], args[2]);
+            break;
+        case SYS_pipe:
+            ret = sys_pipe((int *)args[0]);
+            break;
+        case SYS_close:
+            ret = sys_close(args[0]);
             break;
         case SYS_ktest:
             ret = ktest_syscall(args);

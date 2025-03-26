@@ -2,6 +2,9 @@
 #include "../../os/riscv.h"
 #include "../lib/user.h"
 
+#define BUFSZ (PGSIZE * 4)
+char buf[BUFSZ];
+
 // regression test. test whether exec() leaks memory if one of the
 // arguments is invalid. the test passes if the kernel doesn't panic.
 void exec_badarg(char *s) {
@@ -294,6 +297,107 @@ void nowrite(char *s) {
     exit(0);
 }
 
+void pipe1(char *s) {
+    int fds[2], pid, xstatus;
+    int seq, i, n, cc, total;
+    enum { N = 5, SZ = 1033 };
+
+    if (pipe(fds) != 0) {
+        printf("%s: pipe() failed\n", s);
+        exit(1);
+    }
+    pid = fork();
+    seq = 0;
+    if (pid == 0) {
+        close(fds[0]);
+        for (n = 0; n < N; n++) {
+            for (i = 0; i < SZ; i++) buf[i] = seq++;
+            if (write(fds[1], buf, SZ) != SZ) {
+                printf("%s: pipe1 oops 1\n", s);
+                exit(1);
+            }
+        }
+        exit(0);
+    } else if (pid > 0) {
+        close(fds[1]);
+        total = 0;
+        cc    = 1;
+        while ((n = read(fds[0], buf, cc)) > 0) {
+            for (i = 0; i < n; i++) {
+                if ((buf[i] & 0xff) != (seq++ & 0xff)) {
+                    printf("%s: pipe1 oops 2\n", s);
+                    return;
+                }
+            }
+            total += n;
+            cc = cc * 2;
+            if (cc > sizeof(buf))
+                cc = sizeof(buf);
+        }
+        if (total != N * SZ) {
+            printf("%s: pipe1 oops 3 total %d\n", s, total);
+            exit(1);
+        }
+        close(fds[0]);
+        wait(-1, &xstatus);
+        exit(xstatus);
+    } else {
+        printf("%s: fork() failed\n", s);
+        exit(1);
+    }
+}
+
+// meant to be run w/ at most two CPUs
+void preempt(char *s) {
+    int pid1, pid2, pid3;
+    int pfds[2];
+
+    pid1 = fork();
+    if (pid1 < 0) {
+        printf("%s: fork failed", s);
+        exit(1);
+    }
+    if (pid1 == 0)
+        for (;;);
+
+    pid2 = fork();
+    if (pid2 < 0) {
+        printf("%s: fork failed\n", s);
+        exit(1);
+    }
+    if (pid2 == 0)
+        for (;;);
+
+    pipe(pfds);
+    pid3 = fork();
+    if (pid3 < 0) {
+        printf("%s: fork failed\n", s);
+        exit(1);
+    }
+    if (pid3 == 0) {
+        close(pfds[0]);
+        if (write(pfds[1], "x", 1) != 1)
+            printf("%s: preempt write error", s);
+        close(pfds[1]);
+        for (;;);
+    }
+
+    close(pfds[1]);
+    if (read(pfds[0], buf, sizeof(buf)) != 1) {
+        printf("%s: preempt read error", s);
+        return;
+    }
+    close(pfds[0]);
+    printf("kill... ");
+    kill(pid1);
+    kill(pid2);
+    kill(pid3);
+    printf("wait... ");
+    wait(-1, NULL);
+    wait(-1, NULL);
+    wait(-1, NULL);
+}
+
 struct test {
     void (*f)(char *);
     char *s;
@@ -307,6 +411,9 @@ struct test {
     {sbrkmuch,    "sbrkmuch"   },
     {bsstest,     "bsstest"    },
     {nowrite,     "nowrite"    },
+    {preempt,     "preempt"    },
+    // pipe tests
+    {pipe1,       "pipe1"      },
     {NULL,        NULL         },
 };
 

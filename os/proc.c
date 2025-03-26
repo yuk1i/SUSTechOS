@@ -161,14 +161,6 @@ static void freeproc(struct proc *p) {
     p->killed     = 0;
     p->parent     = NULL;
 
-    // free file descriptors
-    for (int i = 0; i < NPROCFILE; i++) {
-        if (p->fdtable[i]) {
-            fput(p->fdtable[i]);
-            p->fdtable[i] = NULL;
-        }
-    }
-
     acquire(&p->mm->lock);
     mm_free(p->mm);
 
@@ -355,6 +347,14 @@ void exit(int code) {
 
     if (p == init_proc) {
         panic("init process exited");
+    }
+
+    // close opened files.
+    for (int i = 0; i < NPROCFILE; i++) {
+        if (p->fdtable[i]) {
+            fput(p->fdtable[i]);
+            p->fdtable[i] = NULL;
+        }
     }
 
     acquire(&wait_lock);
