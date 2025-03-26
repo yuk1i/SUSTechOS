@@ -161,6 +161,14 @@ static void freeproc(struct proc *p) {
     p->killed     = 0;
     p->parent     = NULL;
 
+    // free file descriptors
+    for (int i = 0; i < NPROCFILE; i++) {
+        if (p->fdtable[i]) {
+            fput(p->fdtable[i]);
+            p->fdtable[i] = NULL;
+        }
+    }
+
     acquire(&p->mm->lock);
     mm_free(p->mm);
 
@@ -283,6 +291,8 @@ int exec(char *name, char *args[]) {
     acquire(&p->mm->lock);
     mm_free_pages(p->mm);
     release(&p->mm->lock);
+
+    // execve preserves file descriptors.
 
     if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
