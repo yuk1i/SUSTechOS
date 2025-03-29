@@ -49,7 +49,7 @@ pte_t *walk(struct mm *mm, uint64 va, int alloc) {
     return &pagetable[PX(0, va)];
 }
 
-// Look up a virtual address, return the physical address,
+// Look up a *page-aligned* virtual address, return the *page-aligned* physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
 uint64 __pa walkaddr(struct mm *mm, uint64 va) {
@@ -75,7 +75,7 @@ uint64 __pa walkaddr(struct mm *mm, uint64 va) {
     return pa;
 }
 
-// Look up a virtual address, return the physical address,
+// Look up a virtual address, return the physical address. return address is bitwise OR-ed with offset.
 uint64 useraddr(struct mm *mm, uint64 va) {
     uint64 page = walkaddr(mm, PGROUNDDOWN(va));
     if (page == 0)
@@ -83,6 +83,7 @@ uint64 useraddr(struct mm *mm, uint64 va) {
     return page | (va & 0xFFFULL);
 }
 
+// Create a mm structure and a page table.
 struct mm *mm_create() {
     struct mm *mm = kalloc(&mm_allocator);
     memset(mm, 0, sizeof(*mm));
@@ -245,6 +246,9 @@ int mm_mappages(struct vma *vma) {
     return 0;
 }
 
+// Remap a range of virtual address to a new range.
+// The new range must not overlap with any existing range. 
+// Used in sbrk.
 int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
     assert(PGALIGNED(start));
     assert(PGALIGNED(end));
@@ -335,6 +339,7 @@ err:
     return -ENOMEM;
 }
 
+// Map a physical page to a virtual address.
 int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags) {
     assert(holding(&mm->lock));
 
