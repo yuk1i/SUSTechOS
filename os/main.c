@@ -89,7 +89,7 @@ void bootcpu_entry(int mhartid) {
     uint64 impl = sbi_get_mimpid();
     if (vendor == 0x489 && impl == 0x4210427) {
         printf("=== Boot: Detect SiFive U74, Possible running on VisionFive 2 board ===\n");
-        printf("Assume s-mode U-boot exists. mhardid is stored in tp.\n");
+        printf("Assume s-mode U-boot exists. mhartid is stored in tp.\n");
         on_vf2_board = 1;
         mhartid = r_tp();
     }

@@ -3,6 +3,8 @@
 #include "riscv.h"
 #include "sbi.h"
 
+extern int on_vf2_board;
+
 /// read the `mtime` regiser
 uint64 get_cycle() {
     return r_time();
@@ -18,6 +20,9 @@ void timer_init() {
 // /// Set the next timer interrupt
 void set_next_timer() {
     const uint64 timebase = CPU_FREQ / TICKS_PER_SEC;
-    // set_timer(get_cycle() + timebase);
-    w_stimecmp(r_time() + timebase);
+    if (on_vf2_board) {
+        set_timer(get_cycle() + timebase);
+    } else {
+        w_stimecmp(r_time() + timebase);
+    }
 }
