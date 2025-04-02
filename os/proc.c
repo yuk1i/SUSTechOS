@@ -372,7 +372,7 @@ int kill(int pid) {
         p = pool[i];
         acquire(&p->lock);
         if (p->pid == pid) {
-            p->killed = 1;
+            p->killed = -1;
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
                 p->state = RUNNABLE;
@@ -385,9 +385,10 @@ int kill(int pid) {
     return -EINVAL;
 }
 
-void setkilled(struct proc *p) {
+void setkilled(struct proc *p, int reason) {
+    assert(reason < 0);
     acquire(&p->lock);
-    p->killed = 1;
+    p->killed = reason;
     release(&p->lock);
 }
 
