@@ -45,7 +45,6 @@ void proc_init() {
         sfence_vma();
         proc_kstack += 2 * KERNEL_STACK_SIZE;
 
-        p->trapframe = (struct trapframe *)PA_TO_KVA(kallocpage());
         pool[i]      = p;
     }
     sched_init();
