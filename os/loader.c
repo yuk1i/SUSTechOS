@@ -156,7 +156,6 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     p->trapframe->epc = ehdr->e_entry;
     p->trapframe->a0  = argc;
     p->trapframe->a1  = uargv_ptr;
-    p->state          = RUNNABLE;
 
     release(&p->mm->lock);
     // vm_print(p->mm->pgt);
@@ -184,6 +183,7 @@ int load_init_app() {
     if (load_user_elf(app, p, argv) < 0) {
         panic("fail to load init elf.");
     }
+    p->state          = RUNNABLE;
     add_task(p);
     init_proc = p;
     release(&p->lock);
