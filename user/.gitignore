@@ -10,3 +10,4 @@ kernel_app.ld
 *.d
 *.asm
 *.sym
+lib/usys.S
