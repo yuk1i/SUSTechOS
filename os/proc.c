@@ -237,10 +237,12 @@ int exec(char *name, char *args[]) {
 
     acquire(&p->lock);
 
-    // execve does not preserve memory mappings:
+    // execve does NOT preserve memory mappings:
     //  free VMAs including program_brk, and ustack
-    //  However, keep trapframe and trampoline, because it belongs to curr_proc().
-
+    // load_user_elf() will create a new mm for the new process and free the old one
+    //  , if page allocations all succeed.
+    // Otherwise, we will return to the old process.
+    // However, keep the phys page of trapframe, because it belongs to struct proc.
     if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
         return ret;

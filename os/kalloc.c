@@ -29,7 +29,6 @@ void kpgmgrinit() {
 
     for (uint64 p = kpage_allocator_end - PGSIZE; p >= kpage_allocator_base; p -= PGSIZE) {
         kfreepage((void *)KVA_TO_PA(p));
-        freepages_count++;
     }
     kalloc_inited = 1;
 }

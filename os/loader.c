@@ -72,7 +72,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
 
         // map the VMA with mm_mappages. if succeed, walkaddr should never fails.
         if ((ret = mm_mappages(vma)) < 0) {
-            errorf("mm_mappages");
+            errorf("mm_mappages phdr: vaddr %p", vma->vm_start);
             goto bad;
         }
 
@@ -192,7 +192,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
 
     // otherwise, page allocations fails. we will return to the old process.
 bad:
-    warnf("load_user_elf failed");
+    warnf("load (%s) failed: %d", app->name, ret);
     mm_free(new_mm);
     return ret;
 }

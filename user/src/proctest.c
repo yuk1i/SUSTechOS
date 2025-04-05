@@ -2,6 +2,8 @@
 #include "../../os/riscv.h"
 #include "../lib/user.h"
 
+#define getfreemem() (ktest(KTEST_GET_NRFREEPGS, 0, 0))
+
 // regression test. test whether exec() leaks memory if one of the
 // arguments is invalid. the test passes if the kernel doesn't panic.
 void exec_badarg(char *s) {
@@ -17,6 +19,67 @@ void exec_badarg(char *s) {
     }
 
     exit(0);
+}
+
+/**
+ * Test if exec() and fork() leaks memory when fails.
+ */
+void exec_nomem(char *s) {
+    char *argv[] = {
+        "verybig",
+        NULL,
+    };
+    int pid, remaining;
+    int freemem = getfreemem();
+    if (freemem % 1000 == 0) {
+        printf("call sbrk to make the number of remaining pages not aligned to 1000\n");
+        exit(1);
+    }
+    pid = fork();
+    assert(pid >= 0);
+    if (pid == 0) {
+        int ret = exec("verybig", argv);
+        if (ret < 0)
+            exit(100 - ret);
+    } else {
+        sleep(10);
+        remaining = getfreemem();
+        printf("verybig: freemem %d, remaining %d\n", freemem, remaining);
+        assert_eq(freemem - remaining, 1000);
+        kill(pid);
+        wait(-1, NULL);
+    }
+    remaining = getfreemem();
+    assert_eq(remaining, freemem);
+    while (remaining > 0) {
+        pid = fork();
+        if (pid < 0) {
+            assert(pid == -ENOMEM);
+            printf("verybig: fork failed due to ENOMEM, expected\n");
+            break;
+        }
+        if (pid == 0) {
+            int ret = exec("verybig", argv);
+            if (ret < 0) {
+                printf("exec failed with %d\n", ret);
+                exit(100 - ret);
+            }
+        }
+        sleep(10);
+        remaining = getfreemem();
+        printf("verybig: freemem %d, remaining %d\n", freemem, remaining);
+    }
+    printf("verybig: stop fork&exec, remaining %d\n", remaining);
+    int ret;
+    do {
+        int xstatus;
+        ret = wait(-1, &xstatus);
+        if (ret > 0)
+            printf("verybig: wait %d, status %d\n", ret, xstatus);
+    } while (ret > 0);
+    remaining = getfreemem();
+    // never leak any memory
+    assert_eq(remaining, freemem);
 }
 
 // test if child is killed (status = -1)
@@ -299,6 +362,7 @@ struct test {
     char *s;
 } proctests[] = {
     {exec_badarg, "exec_badarg"},
+    {exec_nomem,  "exec_nomem" },
     {killstatus,  "killstatus" },
     {exitwait,    "exitwait"   },
     {reparent,    "reparent"   },
@@ -368,7 +432,7 @@ int drivetests(int quick, int continuous, char *whichone) {
     return 0;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     printf("=== TESTSUITE ===\nproctest\n\n");
     drivetests(0, 0, NULL);
     return 0;
