@@ -134,7 +134,7 @@ static void freevma(struct vma *vma, int free_phy_page) {
     sfence_vma();
 }
 
-void mm_free_pages(struct mm *mm) {
+void mm_free_vmas(struct mm *mm) {
     assert(holding(&mm->lock));
 
     struct vma *next, *vma = mm->vma;
@@ -161,7 +161,7 @@ void mm_free(struct mm *mm) {
     assert(holding(&mm->lock));
     assert(mm->refcnt > 0);
 
-    mm_free_pages(mm);
+    mm_free_vmas(mm);
     freepgt(mm->pgt);
 
     int oldref = mm->refcnt--;
@@ -401,7 +401,7 @@ int mm_copy(struct mm *old, struct mm *new) {
 
     return 0;
 err:
-    mm_free_pages(new);
+    mm_free_vmas(new);
     return -ENOMEM;
 }
 

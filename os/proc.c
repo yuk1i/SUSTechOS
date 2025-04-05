@@ -261,12 +261,14 @@ int exec(char *name, char *args[]) {
     //  free VMAs including program_brk, and ustack
     //  However, keep trapframe and trampoline, because it belongs to curr_proc().
     acquire(&p->mm->lock);
-    mm_free_pages(p->mm);
+    mm_free_vmas(p->mm);
     release(&p->mm->lock);
 
     if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
-        return ret;
+        // existing VMAs are already freed
+        // , so no ways to return to original process.
+        exit(-1);
     }
 
     release(&p->lock);
