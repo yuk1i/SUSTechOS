@@ -3,7 +3,7 @@
 #include "defs.h"
 
 void print_trapframe(struct trapframe *tf) {
-    printf("trapframe at %p\n", tf);
+    printf("trapframe at %p, epc: %p\n", tf, tf->epc);
     printf("ra: %p  sp: %p  gp: %p  tp: %p\n", tf->ra, tf->sp, tf->gp, tf->tp);
     printf("t0: %p  t1: %p  t2: %p  s0: %p\n", tf->t0, tf->t1, tf->t2, tf->s0);
     printf("s1: %p  a0: %p  a1: %p  a2: %p\n", tf->s1, tf->a0, tf->a1, tf->a2);
