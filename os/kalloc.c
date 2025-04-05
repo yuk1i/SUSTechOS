@@ -39,6 +39,7 @@ void kpgmgrinit() {
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
 void kfreepage(void *__pa pa) {
+    uint64 ra = r_ra();  // who calls me?
     struct linklist *l;
 
     uint64 __kva kvaddr = PA_TO_KVA(pa);
@@ -47,7 +48,7 @@ void kfreepage(void *__pa pa) {
     memset((void *)kvaddr, 0xdd, PGSIZE);
 
     if (kalloc_inited)
-        debugf("free: %p", pa);
+        debugf("free: %p, called by %p", pa, ra);
 
     acquire(&kpagelock);
     l             = (struct linklist *)kvaddr;

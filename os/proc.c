@@ -37,15 +37,22 @@ void proc_init() {
         p->index = i;
         p->state = UNUSED;
 
+        // allocate the Trapframe.
+        uint64 __pa tf = (uint64)kallocpage();
+        // during system boots, we should always have enough memory.
+        assert(tf);
+        p->trapframe = (struct trapframe *)PA_TO_KVA(tf);
+
         p->kstack = proc_kstack;
         for (uint64 va = proc_kstack; va < proc_kstack + KERNEL_STACK_SIZE; va += PGSIZE) {
             uint64 __pa newpg = (uint64)kallocpage();
+            assert(newpg);
             kvmmap(kernel_pagetable, va, newpg, PGSIZE, PTE_A | PTE_D | PTE_R | PTE_W);
         }
         sfence_vma();
         proc_kstack += 2 * KERNEL_STACK_SIZE;
 
-        pool[i]      = p;
+        pool[i] = p;
     }
     sched_init();
 }
@@ -87,35 +94,14 @@ found:
     p->parent     = NULL;
     p->exit_code  = 0;
     p->sleep_chan = NULL;
+    p->pid        = allocpid();
+    p->state      = USED;
 
-    // ==== Resources Allocation ====
-
-    p->pid   = allocpid();
-    p->state = USED;
-    p->mm    = mm_create();
-    if (!p->mm)
-        goto err_free_proc;
-
-    // only allocate trampoline and trapframe here.
-    if (mm_mappageat(p->mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X))
-        goto err_free_mm;
-
-    uint64 __pa tf = (uint64)kallocpage();
-    if (!tf)
-        goto err_free_mm;
-
-    if (mm_mappageat(p->mm, TRAPFRAME, tf, PTE_A | PTE_D | PTE_R | PTE_W))
-        goto err_free_tf;
-
-    release(&p->mm->lock);
-
-    // ==== Resources Allocation Ends ====
-
-    // loader will initialize these:
+    // fork or exec(load_user_elf) will initialize these:
+    p->mm      = NULL;
     p->vma_brk = NULL;
 
     // prepare trapframe and the first return context.
-    p->trapframe = (struct trapframe *)PA_TO_KVA(tf);
     memset(&p->context, 0, sizeof(p->context));
     memset((void *)p->kstack, 0, KERNEL_STACK_SIZE);
     memset((void *)p->trapframe, 0, PGSIZE);
@@ -125,23 +111,10 @@ found:
     assert(holding(&p->lock));
 
     return p;
-
-    // Resources clean up.
-err_free_tf:
-    kfreepage((void *)tf);
-err_free_mm:
-    mm_free(p->mm);
-err_free_proc:
-    p->mm    = NULL;
-    p->state = UNUSED;
-    p->pid   = -1;
-    release(&p->lock);
-    return NULL;
 }
 
 static void freeproc(struct proc *p) {
     assert(holding(&p->lock));
-    assert(!holding(&p->mm->lock));
 
     p->state      = UNUSED;
     p->pid        = -1;
@@ -150,10 +123,12 @@ static void freeproc(struct proc *p) {
     p->killed     = 0;
     p->parent     = NULL;
 
-    acquire(&p->mm->lock);
-    mm_free(p->mm);
+    if (p->mm) {
+        assert(!holding(&p->mm->lock));
+        acquire(&p->mm->lock);
+        mm_free(p->mm);
+    }
 
-    kfreepage((void *)KVA_TO_PA(p->trapframe));
     p->mm      = NULL;
     p->vma_brk = NULL;
 }
@@ -206,13 +181,18 @@ int fork() {
     if (np == NULL) {
         return -ENOMEM;
     }
+    np->mm = mm_create(np->trapframe);
+    if (np->mm == NULL) {
+        freeproc(np);
+        release(&np->lock);
+        return -ENOMEM;
+    }
 
     assert(holding(&np->lock));
 
     struct proc *p = curr_proc();
     acquire(&p->lock);
     acquire(&p->mm->lock);
-    acquire(&np->mm->lock);
 
     // Copy user memory from parent to child.
     if ((ret = mm_copy(p->mm, np->mm)) < 0)
@@ -260,15 +240,10 @@ int exec(char *name, char *args[]) {
     // execve does not preserve memory mappings:
     //  free VMAs including program_brk, and ustack
     //  However, keep trapframe and trampoline, because it belongs to curr_proc().
-    acquire(&p->mm->lock);
-    mm_free_vmas(p->mm);
-    release(&p->mm->lock);
 
     if ((ret = load_user_elf(app, p, args)) < 0) {
         release(&p->lock);
-        // existing VMAs are already freed
-        // , so no ways to return to original process.
-        exit(-1);
+        return ret;
     }
 
     release(&p->lock);

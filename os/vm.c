@@ -84,7 +84,7 @@ uint64 useraddr(struct mm *mm, uint64 va) {
 }
 
 // Create a mm structure and a page table.
-struct mm *mm_create() {
+struct mm *mm_create(struct trapframe* tf) {
     struct mm *mm = kalloc(&mm_allocator);
     memset(mm, 0, sizeof(*mm));
     spinlock_init(&mm->lock, "mm");
@@ -93,16 +93,24 @@ struct mm *mm_create() {
 
     void *pa = kallocpage();
     if (!pa) {
-        warnf("kallocpage failed");
+        warnf("kallocpage failed for root page table");
         goto free_mm;
     }
     mm->pgt = (pagetable_t)PA_TO_KVA(pa);
     memset(mm->pgt, 0, PGSIZE);
-
     acquire(&mm->lock);
+
+    // map trapframe and trampoline in the new mm
+    if (mm_mappageat(mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X) < 0)
+        goto free_mm;
+
+    if (mm_mappageat(mm, TRAPFRAME, KVA_TO_PA(tf), PTE_A | PTE_D | PTE_R | PTE_W))
+        goto free_mm;
+
     return mm;
 
 free_mm:
+    release(&mm->lock);
     kfree(&mm_allocator, mm);
     return NULL;
 }
@@ -162,14 +170,10 @@ void mm_free(struct mm *mm) {
     assert(mm->refcnt > 0);
 
     mm_free_vmas(mm);
-    freepgt(mm->pgt);
+    freepgt(mm->pgt);    
 
-    int oldref = mm->refcnt--;
     release(&mm->lock);
-
-    if (oldref == 1) {
-        kfree(&mm_allocator, mm);
-    }
+    kfree(&mm_allocator, mm);
 }
 
 static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma *exclude) {

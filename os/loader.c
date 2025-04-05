@@ -25,10 +25,25 @@ struct user_app *get_elf(char *name) {
     return NULL;
 }
 
+/**
+ * Try to load the user program into the process.acquire
+ * 
+ * If succeed, the process's mm is freed and set to a new struct mm.
+ * Otherwise, the process's mm is unchanged.
+ */
 int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     if (p == NULL || p->state == UNUSED)
         panic("...");
-    acquire(&p->mm->lock);
+
+    // create a new mm for the process
+    struct mm *new_mm = mm_create(p->trapframe);
+    if (new_mm == NULL) {
+        errorf("mm_create");
+        return -ENOMEM;
+    }
+
+    struct vma* vma_brk;
+    uint64 brk;
     int ret;
 
     Elf64_Ehdr *ehdr      = (Elf64_Ehdr *)app->elf_address;
@@ -50,21 +65,22 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         if (phdr->p_flags & PF_X)
             pte_perm |= PTE_X;
 
-        struct vma *vma = mm_create_vma(p->mm);
+        struct vma *vma = mm_create_vma(new_mm);
         vma->vm_start   = PGROUNDDOWN(phdr->p_vaddr);  // The ELF requests this phdr loaded to p_vaddr;
         vma->vm_end     = PGROUNDUP(vma->vm_start + phdr->p_memsz);
         vma->pte_flags  = pte_perm;
 
+        // map the VMA with mm_mappages. if succeed, walkaddr should never fails.
         if ((ret = mm_mappages(vma)) < 0) {
             errorf("mm_mappages");
-            return ret;
+            goto bad;
         }
 
         int64 file_off      = 0;
         uint64 file_remains = phdr->p_filesz;
 
         for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
-            void *__kva pa = (void *)PA_TO_KVA(walkaddr(p->mm, va));
+            void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
             void *src      = (void *)(app->elf_address + phdr->p_offset + file_off);
 
             uint64 copy_size = MIN(file_remains, PGSIZE);
@@ -89,7 +105,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
                 // set [va, page boundary of ba) to zero
                 uint64 page_off   = va - PGROUNDDOWN(va);
                 uint64 clear_size = PGROUNDUP(va) - va;
-                void *__kva pa    = (void *)PA_TO_KVA(walkaddr(p->mm, PGROUNDDOWN(va)));
+                void *__kva pa    = (void *)PA_TO_KVA(walkaddr(new_mm, PGROUNDDOWN(va)));
                 memset(pa + page_off, 0, clear_size);
             }
         }
@@ -99,30 +115,33 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     }
 
     // setup brk: zero
-    p->vma_brk            = mm_create_vma(p->mm);
-    p->vma_brk->vm_start  = max_va_end;
-    p->vma_brk->vm_end    = max_va_end;
-    p->vma_brk->pte_flags = PTE_R | PTE_W | PTE_U;
-    if ((ret = mm_mappages(p->vma_brk)) < 0) {
+    vma_brk            = mm_create_vma(new_mm);
+    vma_brk->vm_start  = max_va_end;
+    vma_brk->vm_end    = max_va_end;
+    vma_brk->pte_flags = PTE_R | PTE_W | PTE_U;
+    if ((ret = mm_mappages(vma_brk)) < 0) {
         errorf("mm_mappages vma_brk");
-        return ret;
+        goto bad;
     }
-    p->brk = max_va_end;
+    brk = max_va_end;
 
     // setup stack
-    struct vma *vma_ustack = mm_create_vma(p->mm);
+    struct vma *vma_ustack = mm_create_vma(new_mm);
     vma_ustack->vm_start   = USTACK_START - USTACK_SIZE;
     vma_ustack->vm_end     = USTACK_START;
     vma_ustack->pte_flags  = PTE_R | PTE_W | PTE_U;
     if ((ret = mm_mappages(vma_ustack)) < 0) {
         errorf("mm_mappages ustack");
-        return ret;
+        goto bad;
     }
 
     for (uint64 va = vma_ustack->vm_start; va < vma_ustack->vm_end; va += PGSIZE) {
-        void *__kva pa = (void *)PA_TO_KVA(walkaddr(p->mm, va));
+        void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
         memset(pa, 0, PGSIZE);
     }
+
+    // from here, we are done with all page allocation 
+    // (including pagetable allocation during mapping the trampoline and trapframe).
 
     // push strings
     uint64 __user uargv[MAXARG];
@@ -132,7 +151,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         len       = strlen(args[i]) + 1;
         sp        = sp - len;
         sp        = sp & ~7;  // align to 8 bytes
-        void *kva = (void *)PA_TO_KVA(useraddr(p->mm, sp));
+        void *kva = (void *)PA_TO_KVA(useraddr(new_mm, sp));
         memmove(kva, args[i], len);
         uargv[i] = sp;  // save the start address of string to uargv
         argc++;
@@ -144,23 +163,38 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
     // allocate a NULL
     for (int i = argc - 1; i >= 0; i--) {
         sp             = sp - sizeof(uint64);
-        void *kva      = (void *)PA_TO_KVA(useraddr(p->mm, sp));
+        void *kva      = (void *)PA_TO_KVA(useraddr(new_mm, sp));
         *(uint64 *)kva = uargv[i];
     }
     uint64 uargv_ptr = sp;
     sp               = sp & ~15;  // aligned to 16 bytes
     assert(IS_ALIGNED(sp, 16));
 
+    release(&new_mm->lock);
+
+    // free the old mm. for the first process, p->mm = NULL.
+    if (p->mm) {
+        acquire(&p->mm->lock);
+        mm_free(p->mm);    
+    }
+    
+    // we can modify p's fields because we will return to the new exec-ed process.
+    p->mm      = new_mm;
+    p->vma_brk = vma_brk;
+    p->brk     = brk;
     // setup trapframe
     p->trapframe->sp  = sp;
     p->trapframe->epc = ehdr->e_entry;
     p->trapframe->a0  = argc;
     p->trapframe->a1  = uargv_ptr;
 
-    release(&p->mm->lock);
-    // vm_print(p->mm->pgt);
-
     return 0;
+
+    // otherwise, page allocations fails. we will return to the old process.
+bad:
+    warnf("load_user_elf failed");
+    mm_free(new_mm);
+    return ret;
 }
 
 #define INIT_PROC "init"
