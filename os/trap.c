@@ -134,14 +134,19 @@ static void handle_pgfault(void) {
     //		> Standard supervisor software should be written to assume either or both PTE update schemes may be in effect.
 
     if (pte != NULL && (*pte & PTE_V) && (*pte & PTE_U)) {
-        *pte |= PTE_A;
-        if (cause == StorePageFault)
-            *pte |= PTE_D;
-        sfence_vma();
-    } else {
-        infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
-        setkilled(p, -2);
+        if (!(*pte & PTE_A) || (cause == StorePageFault && !(*pte & PTE_D))) {
+            // page fault possibly due to missing A/D bit
+            // - Load/IF PageFault: Missing A bit
+            // - Store PageFault  : Missing A/D bit
+            *pte |= PTE_A;
+            if (cause == StorePageFault)
+                *pte |= PTE_D;    
+            return;
+        }
     }
+    // otherwise, it is a page fault due to invalid address
+    infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
+    setkilled(p, -2);
 }
 
 static void unknown_trap(void) {

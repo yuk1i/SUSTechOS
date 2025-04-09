@@ -72,7 +72,7 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
 
         // map the VMA with mm_mappages. if succeed, walkaddr should never fails.
         if ((ret = mm_mappages(vma)) < 0) {
-            errorf("mm_mappages phdr: vaddr %p", vma->vm_start);
+            errorf("mm_mappages phdr: vaddr %p", phdr->p_vaddr);
             goto bad;
         }
 

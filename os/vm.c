@@ -53,8 +53,10 @@ pte_t *walk(struct mm *mm, uint64 va, int alloc) {
 // or 0 if not mapped.
 // Can only be used to look up user pages.
 uint64 __pa walkaddr(struct mm *mm, uint64 va) {
-    if (!IS_USER_VA(va))
-        panic("invalid user VA");
+    if (!IS_USER_VA(va)) {
+        errorf("invalid user VA: %p", va);
+        return 0;
+    }
 
     assert_str(PGALIGNED(va), "unaligned va %p", va);
     assert(holding(&mm->lock));
@@ -85,7 +87,7 @@ uint64 useraddr(struct mm *mm, uint64 va) {
 
 /**
  * @brief Create a new mm structure and a page table.
- * 
+ *
  * Then map the trapframe and trampoline in the new mm.
  */
 struct mm *mm_create(struct trapframe *tf) {
@@ -114,6 +116,8 @@ struct mm *mm_create(struct trapframe *tf) {
     return mm;
 
 free_mm:
+    if (mm->pgt)
+        kfreepage((void *)KVA_TO_PA(mm->pgt));
     release(&mm->lock);
     kfree(&mm_allocator, mm);
     return NULL;
@@ -207,7 +211,7 @@ static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma
 /**
  * @brief Map virtual address defined in @vma.
  * Addresses must be aligned to PGSIZE.
- * Physical pages are allocated automatically. 
+ * Physical pages are allocated automatically.
  * If allocation fails, the already-mapped PAs are freed. Then the vma is freed.
  * Caller should then use walkaddr to resolve the mapped PA, and do initialization.
  *
