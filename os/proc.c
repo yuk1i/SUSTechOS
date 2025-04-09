@@ -355,6 +355,7 @@ int kill(int pid) {
             if (p->state == SLEEPING) {
                 // Wake process from sleep().
                 p->state = RUNNABLE;
+                add_task(p);
             }
             release(&p->lock);
             return 0;
