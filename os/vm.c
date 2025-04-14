@@ -9,6 +9,7 @@ static allocator_t vma_allocator;
 void uvm_init() {
     allocator_init(&mm_allocator, "mm", sizeof(struct mm), 16384);
     allocator_init(&vma_allocator, "vma", sizeof(struct vma), 16384);
+    swap_init();
 }
 
 // Return the address of the PTE in page table pagetable
@@ -65,10 +66,19 @@ uint64 __pa walkaddr(struct mm *mm, uint64 va) {
     uint64 pa;
 
     pte = walk(mm, va, 0);
-    if (pte == NULL || *pte == 0xaaaadeadbeef0000ull) {
+    if (pte == NULL) {
+        return 0;
+    }
+    if (*pte == 0xaaaadeadbeef0000ull) {
         // pgfault-lab: demand paging:
         //  if kernel need to access this user's page, we do allocate it.
         assert(do_demand_paging(mm, va) == 0);
+        return walkaddr(mm, va);
+    }
+    if ((*pte >> 48) == 0xbbbb) {
+        // pgfault-lab: swap:
+        //  if kernel need to access this user's page, we do swap it in.
+        assert(swap_in(mm, va) == 0);
         return walkaddr(mm, va);
     }
     if ((*pte & PTE_V) == 0)

@@ -35,6 +35,23 @@ static int handle_intr(void) {
             ticks++;
             wakeup(&ticks);
             release(&tickslock);
+
+            // pgfault-lab: swap: clear all A/D bits for current process, periodically.
+            if (curr_proc() != NULL) {
+                struct mm *mm = curr_proc()->mm;
+                acquire(&mm->lock);
+                struct vma *vma = mm->vma;
+                while (vma) {
+                    for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
+                        pte_t *pte = walk(mm, vma->vm_start, 0);
+                        if (pte != NULL && (*pte & PTE_V) && (*pte & PTE_U)) {
+                            *pte &= ~(PTE_A | PTE_D);
+                        }
+                    }
+                    vma = vma->next;
+                }
+                release(&mm->lock);
+            }
         }
         set_next_timer();
         return 1;
@@ -156,6 +173,16 @@ static void handle_pgfault(void) {
         return;
     }
 
+    // pgfault-lab: swap:
+    if (pte != NULL && (*pte >> 48) == 0xbbbb) {
+        // this is a magic number, indicating that the page is swapped out.
+        // swap in the page and map it to the virtual address.
+        infof("swapping in: %p.", addr);
+        acquire(&mm->lock);
+        assert(swap_in(mm, PGROUNDDOWN(addr)) == 0);
+        release(&mm->lock);
+        return;
+    }
     // otherwise, it is a page fault due to invalid address
     infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
     setkilled(p, -2);

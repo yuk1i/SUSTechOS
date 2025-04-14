@@ -9,4 +9,6 @@ uint64 ktest_syscall(uint64 args[6]);
 #define KTEST_GET_NRFREEPGS 3
 #define KTEST_GET_NRSTRBUF  4
 
+#define KTEST_SET_NRFREEPGS 995
+
 #endif  // __KTEST_H__

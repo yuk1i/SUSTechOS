@@ -17,6 +17,11 @@ uint64 ktest_syscall(uint64 args[6]) {
             return freepages_count;
         case KTEST_GET_NRSTRBUF:
             return kstrbuf.available_count;
+        case KTEST_SET_NRFREEPGS:
+            if (args[1] > 0) {
+                freepages_count = args[1];
+            }
+            break;
     }
     return 0;
 }

@@ -83,7 +83,14 @@ void *__pa kallocpage() {
     if (l != NULL) {
         memset((char *)l, 0xaf, PGSIZE);  // fill with junk
     } else {
-        warnf("out of memory, called by %p", ra);
+        warnf("out of memory, called by %p. try to swap-out a page.", ra);
+
+        // pgfault-lab: out of memory, try to swap page.
+        uint64 pa = swap_out();
+        if (pa != 0) 
+            return (void*)pa;
+
+        warnf("really out of memory!!, caller: %p", ra);
         return 0;
     }
     return (void *)KVA_TO_PA((uint64)l);
