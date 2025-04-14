@@ -72,18 +72,7 @@ int64 sys_wait(int pid, uint64 __user va) {
     struct proc *p = curr_proc();
     int *code      = NULL;
 
-    acquire(&p->lock);
-    acquire(&p->mm->lock);
-    release(&p->lock);
-
-    if (va != 0) {
-        uint64 pa = useraddr(p->mm, va);
-        code      = (int *)PA_TO_KVA(pa);
-    }
-
-    release(&p->mm->lock);
-
-    return wait(pid, code);
+    return wait(pid, (int*) va);
 }
 
 int64 sys_getpid() {

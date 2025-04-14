@@ -254,7 +254,7 @@ int exec(char *name, char *args[]) {
     return p->trapframe->a0;
 }
 
-int wait(int pid, int *code) {
+int wait(int pid, int __user *code) {
     struct proc *child;
     int havekids;
     struct proc *p = curr_proc();
@@ -275,8 +275,12 @@ int wait(int pid, int *code) {
                 if (child->state == ZOMBIE && (pid <= 0 || child->pid == pid)) {
                     int cpid = child->pid;
                     // Found one.
-                    if (code)
-                        *code = child->exit_code;
+                    if (code) {
+                        acquire(&p->mm->lock);
+                        int exit_code = child->exit_code;
+                        copy_to_user(p->mm, (uint64)code, (char*)&exit_code, sizeof(int));
+                        release(&p->mm->lock);
+                    }
                     freeproc(child);
                     release(&child->lock);
                     release(&wait_lock);
