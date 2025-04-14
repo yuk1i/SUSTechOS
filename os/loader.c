@@ -79,38 +79,46 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         int64 file_off      = 0;
         uint64 file_remains = phdr->p_filesz;
 
-        for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
-            void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
-            void *src      = (void *)(app->elf_address + phdr->p_offset + file_off);
+        // pgfault-lab: do not do copy here, since we have not established the 
+        //  mapping in mm-pgt.
 
-            uint64 copy_size = MIN(file_remains, PGSIZE);
-            memmove(pa, src, copy_size);
+        vma->demand_paging.backing_file = 1;
+        vma->demand_paging.elffile_addr = app->elf_address;
+        vma->demand_paging.offset = phdr->p_offset;
+        vma->demand_paging.size   = phdr->p_filesz;
 
-            if (copy_size < PGSIZE) {
-                // clear remaining bytes
-                memset(pa + copy_size, 0, PGSIZE - copy_size);
-            }
-            file_off += copy_size;
-            file_remains -= copy_size;
-        }
+        // for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
+        //     void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
+        //     void *src      = (void *)(app->elf_address + phdr->p_offset + file_off);
 
-        if (phdr->p_memsz > phdr->p_filesz) {
-            // ELF requests larger memory than filesz
-            // 	these are .bss segment, clear it to zero.
+        //     uint64 copy_size = MIN(file_remains, PGSIZE);
+        //     memmove(pa, src, copy_size);
 
-            uint64 bss_start = phdr->p_vaddr + phdr->p_filesz;
-            uint64 bss_end   = phdr->p_vaddr + phdr->p_memsz;
+        //     if (copy_size < PGSIZE) {
+        //         // clear remaining bytes
+        //         memset(pa + copy_size, 0, PGSIZE - copy_size);
+        //     }
+        //     file_off += copy_size;
+        //     file_remains -= copy_size;
+        // }
 
-            for (uint64 va = bss_start; va < bss_end; va = PGROUNDDOWN(va) + PGSIZE) {
-                // set [va, page boundary of ba) to zero
-                uint64 page_off   = va - PGROUNDDOWN(va);
-                uint64 clear_size = PGROUNDUP(va) - va;
-                void *__kva pa    = (void *)PA_TO_KVA(walkaddr(new_mm, PGROUNDDOWN(va)));
-                memset(pa + page_off, 0, clear_size);
-            }
-        }
+        // if (phdr->p_memsz > phdr->p_filesz) {
+        //     // ELF requests larger memory than filesz
+        //     // 	these are .bss segment, clear it to zero.
 
-        assert(file_remains == 0);
+        //     uint64 bss_start = phdr->p_vaddr + phdr->p_filesz;
+        //     uint64 bss_end   = phdr->p_vaddr + phdr->p_memsz;
+
+        //     for (uint64 va = bss_start; va < bss_end; va = PGROUNDDOWN(va) + PGSIZE) {
+        //         // set [va, page boundary of ba) to zero
+        //         uint64 page_off   = va - PGROUNDDOWN(va);
+        //         uint64 clear_size = PGROUNDUP(va) - va;
+        //         void *__kva pa    = (void *)PA_TO_KVA(walkaddr(new_mm, PGROUNDDOWN(va)));
+        //         memset(pa + page_off, 0, clear_size);
+        //     }
+        // }
+
+        // assert(file_remains == 0);
         max_va_end = MAX(max_va_end, PGROUNDUP(phdr->p_vaddr + phdr->p_memsz));
     }
 
@@ -135,10 +143,10 @@ int load_user_elf(struct user_app *app, struct proc *p, char *args[]) {
         goto bad;
     }
 
-    for (uint64 va = vma_ustack->vm_start; va < vma_ustack->vm_end; va += PGSIZE) {
-        void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
-        memset(pa, 0, PGSIZE);
-    }
+    // for (uint64 va = vma_ustack->vm_start; va < vma_ustack->vm_end; va += PGSIZE) {
+    //     void *__kva pa = (void *)PA_TO_KVA(walkaddr(new_mm, va));
+    //     memset(pa, 0, PGSIZE);
+    // }
 
     // from here, we are done with all page allocation 
     // (including pagetable allocation during mapping the trampoline and trapframe).

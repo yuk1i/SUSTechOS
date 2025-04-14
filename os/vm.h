@@ -36,6 +36,17 @@ struct vma {
     uint64 vm_start;
     uint64 vm_end;
     uint64 pte_flags;
+
+    // pgfault-lab: for demand paging:
+    struct 
+    {
+        int backing_file;
+        // The backing file for demand paging:
+        uint64 elffile_addr;
+        uint64 offset;
+        uint64 size;
+    } demand_paging;
+    
 };
 struct mm {
     spinlock_t lock;
@@ -66,6 +77,7 @@ int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags);
 int mm_mappageat(struct mm *mm, uint64 va, uint64 __pa pa, uint64 flags);
 int mm_copy(struct mm* old, struct mm* new);
 struct vma* mm_find_vma(struct mm* mm, uint64 va);
+int do_demand_paging(struct mm *mm, uint64 va);
 
 // uaccess.c
 int copy_to_user(struct mm* mm, uint64 __user dstva, char* src, uint64 len);

@@ -64,8 +64,14 @@ void *__pa kallocpage() {
     uint64 ra = r_ra();  // who calls me?
 
     acquire(&kpagelock);
-    struct linklist *l;
-    l = kmem.freelist;
+    struct linklist *l = NULL;
+    // old: l = kmem.freelist;
+
+    // pgfault-lab: only allocate if freepages_count is not zero
+    //  Thus, we can emulate that we are running out of memory.
+    if (freepages_count > 0)
+        l = kmem.freelist;
+    
     if (l) {
         kmem.freelist = l->next;
         freepages_count--;

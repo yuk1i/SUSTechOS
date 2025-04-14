@@ -65,8 +65,12 @@ uint64 __pa walkaddr(struct mm *mm, uint64 va) {
     uint64 pa;
 
     pte = walk(mm, va, 0);
-    if (pte == NULL)
-        return 0;
+    if (pte == NULL || *pte == 0xaaaadeadbeef0000ull) {
+        // pgfault-lab: demand paging:
+        //  if kernel need to access this user's page, we do allocate it.
+        assert(do_demand_paging(mm, va) == 0);
+        return walkaddr(mm, va);
+    }
     if ((*pte & PTE_V) == 0)
         return 0;
     if ((*pte & PTE_U) == 0) {
@@ -252,14 +256,19 @@ int mm_mappages(struct vma *vma) {
             ret = -EINVAL;
             goto bad;
         }
-        pa = kallocpage();
-        if (!pa) {
-            errorf("kallocpage");
-            ret = -ENOMEM;
-            goto bad;
-        }
+        // pa = kallocpage();
+        // if (!pa) {
+        //     errorf("kallocpage");
+        //     ret = -ENOMEM;
+        //     goto bad;
+        // }
         // memset((void *)PA_TO_KVA(pa), 0, PGSIZE);
-        *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
+        // *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
+
+        // pgfault-lab: do not allocate physical page here.
+        // 	we will allocate it when the page is accessed.
+        *pte = 0xaaaadeadbeef0000ull;
+        // set the PTE to a magic number, for debugging.
     }
     sfence_vma();
 
@@ -437,10 +446,64 @@ struct vma *mm_find_vma(struct mm *mm, uint64 va) {
 
     struct vma *vma = mm->vma;
     while (vma) {
-        if (va == vma->vm_start) {
+        if (vma->vm_start <= va && (va < vma->vm_end || vma->vm_start == vma->vm_end)) {
             return vma;
         }
         vma = vma->next;
     }
     return NULL;
+}
+
+// pgfault-lab: demand paging:
+int do_demand_paging(struct mm *mm, uint64 va) {
+    assert(PGALIGNED(va));
+    assert(holding(&mm->lock));
+
+    struct vma *vma = mm_find_vma(mm, va);
+    if (!vma) {
+        errorf("invalid vma for %p", va);
+        return -EINVAL;
+    }
+
+    // assert that va is in the range of vma
+    assert(vma->vm_start <= va && va < vma->vm_end);
+
+    // allocate a physical page
+    void *pa = kallocpage();
+    if (!pa) {
+        errorf("kallocpage");
+        return -ENOMEM;
+    }
+    memset((void *)PA_TO_KVA(pa), 0, PGSIZE);
+
+    // map the physical page to the virtual address
+    pte_t *pte = walk(mm, va, 1);
+    if (!pte) {
+        errorf("walk failed");
+        goto err;
+    }
+    *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
+
+    infof("demand paging: %p -> %p", va, pa);
+
+    if (vma->demand_paging.backing_file) {
+        const uint64 pgoff = va - vma->vm_start;
+        if (pgoff < vma->demand_paging.size) {
+            // otherwise, we are actually accessing the bss segment.
+
+            // read the file and copy the data to the physical page
+            uint64 offset = vma->demand_paging.offset + pgoff;
+            uint64 size   = vma->demand_paging.size - pgoff;
+            if (size > PGSIZE)
+                size = PGSIZE;
+
+            void *src = (void *)(vma->demand_paging.elffile_addr + offset);
+            memmove((void *)PA_TO_KVA(pa), src, size);
+        }
+    }
+    return 0;
+
+err:
+    kfreepage(pa);
+    return -ENOMEM;
 }

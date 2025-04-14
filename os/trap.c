@@ -140,10 +140,22 @@ static void handle_pgfault(void) {
             // - Store PageFault  : Missing A/D bit
             *pte |= PTE_A;
             if (cause == StorePageFault)
-                *pte |= PTE_D;    
+                *pte |= PTE_D;
             return;
         }
     }
+
+    // pgfault-lab: demand paging:
+    if (pte != NULL && *pte == 0xaaaadeadbeef0000ull) {
+        // this is a magic number, indicating that the page is not allocated yet.
+        // allocate a physical page and map it to the virtual address.;
+        infof("demand-paging: %p.", addr);
+        acquire(&mm->lock);
+        assert(do_demand_paging(mm, PGROUNDDOWN(addr)) == 0);
+        release(&mm->lock);
+        return;
+    }
+
     // otherwise, it is a page fault due to invalid address
     infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
     setkilled(p, -2);
