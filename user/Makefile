@@ -43,6 +43,7 @@ $(UPROGS_STRIPPED): build/stripped/% : build/%
 	@mkdir -p build/stripped
 	$(OBJCOPY) --strip-unneeded $? $@
 
+build/signal : src/signal.c src/signal-project-tests/basic.c
 
 clean:
 	@rm -rf lib/usys.S

@@ -218,6 +218,21 @@ void syscall() {
         case SYS_ktest:
             ret = ktest_syscall(args);
             break;
+        case SYS_sigkill:
+            ret = sys_sigkill(args[0], args[1], args[2]);
+            break;
+        case SYS_sigaction:
+            ret = sys_sigaction(args[0], (sigaction_t *)args[1], (sigaction_t *)args[2]);
+            break;
+        case SYS_sigreturn:
+            ret = sys_sigreturn();
+            break;
+        case SYS_sigprocmask:
+            ret = sys_sigprocmask(args[0], (sigset_t *)args[1], (sigset_t *)args[2]);
+            break;
+        case SYS_sigpending:
+            ret = sys_sigpending((sigset_t *)args[0]);
+            break;
         default:
             ret = -1;
             errorf("unknown syscall %d", id);

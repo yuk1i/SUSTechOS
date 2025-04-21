@@ -7,6 +7,7 @@
 #include "plic.h"
 #include "syscall.h"
 #include "timer.h"
+#include "signal/ksignal.h"
 
 static int64 kp_print_lock = 0;
 extern volatile int panicked;
@@ -204,6 +205,14 @@ void usertrap() {
 
     // prepare for return to user mode
     assert(!intr_get());
+
+    // Project signal:
+    do_signal();
+
+    // are we still alive? pending signals may kill us.
+    if ((killed = iskilled(p)) != 0)
+        exit(killed);
+
     usertrapret();
 }
 

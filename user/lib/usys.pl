@@ -31,3 +31,9 @@ entry("write");
 entry("gettimeofday");
 entry("ktest");
 
+# signals:
+entry("sigaction");
+entry("sigreturn");
+entry("sigkill");
+entry("sigpending");
+entry("sigprocmask");
