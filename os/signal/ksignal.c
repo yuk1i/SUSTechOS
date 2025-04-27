@@ -33,7 +33,9 @@ int do_signal(void) {
     return 0;
 }
 
-// syscall handler:
+// syscall handlers:
+//  sys_* functions are called by syscall.c
+
 int sys_sigaction(int signo, const sigaction_t __user *act, sigaction_t __user *oldact) {
     return 0;
 }

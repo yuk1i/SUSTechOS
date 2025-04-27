@@ -45,6 +45,8 @@ struct cpu {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+extern struct proc *pool[];
+
 // Per-process state
 struct proc {
     spinlock_t lock;
